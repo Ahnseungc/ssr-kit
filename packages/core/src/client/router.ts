@@ -34,7 +34,8 @@ const writeScrollPositions = (positions: Record<string, number>) => {
   }
 };
 
-const needsData = (modules: RouteModule[]) => modules.some((m) => m.loader || m.__ssrkLoader);
+const needsData = (modules: RouteModule[]) =>
+  modules.some((m) => m.loader || m.middleware || m.__ssrkLoader);
 
 const loadModules = (matches: RouteMatch[]) => Promise.all(matches.map((m) => m.route.module()));
 

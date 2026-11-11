@@ -13,6 +13,8 @@ export default defineRoutes([
       { id: 'stream', path: 'stream', module: () => import('./pages/Stream') },
       { id: 'external', path: 'external', module: () => import('./pages/External') },
       { id: 'query', path: 'query', module: () => import('./pages/QueryPage') },
+      { id: 'admin', path: 'admin', module: () => import('./pages/Admin') },
+      { id: 'login', path: 'login', module: () => import('./pages/Login') },
       { id: 'shell', path: 'shell', ssr: false, module: () => import('./pages/Shell') },
     ],
   },

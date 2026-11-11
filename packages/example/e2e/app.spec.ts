@@ -312,3 +312,49 @@ test('새로고침해도 스크롤 위치를 복원한다', async ({ page }) => 
   // 새로고침 순간 브라우저가 몇 px 조정한 값이 저장될 수 있어 근사로 본다
   await expect.poll(() => page.evaluate(() => Math.abs(window.scrollY - 500) <= 10)).toBe(true);
 });
+
+test('미들웨어 가드: 쿠키 없으면 문서 요청은 302 로 로그인, 있으면 통과', async ({ request }) => {
+  const denied = await request.get('/admin', { maxRedirects: 0 });
+  expect(denied.status()).toBe(302);
+  expect(denied.headers().location).toBe('/login?next=/admin');
+
+  const allowed = await request.get('/admin', { headers: { cookie: 'demo_auth=1' } });
+  expect(allowed.status()).toBe(200);
+  const html = await allowed.text();
+  expect(html).toContain('<p data-testid="admin-user">demo</p>');
+  // 루트 미들웨어가 context 에 붙인 값을 로더가 받는다
+  expect(html).toContain('context-ok');
+});
+
+test('미들웨어 가드: 클라 이동도 데이터 요청에서 막혀 로그인으로, 로그인 뒤 접근', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await hydrated(page);
+  await markDocument(page);
+  await page.getByRole('navigation').getByRole('link', { name: '관리자' }).click();
+  await expect(page).toHaveURL('/login?next=/admin');
+  await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible();
+
+  await page.getByRole('button', { name: '데모 로그인' }).click();
+  await expect(page).toHaveURL('/admin');
+  await expect(page.getByTestId('admin-user')).toHaveText('demo');
+  await expect(page.getByTestId('admin-context')).toHaveText('context-ok');
+  expect(await isSameDocument(page)).toBe(true);
+});
+
+test('미들웨어는 클라 번들에서 제거된다', () => {
+  const dir = path.join(import.meta.dirname, '../dist/client/assets');
+  const admin = readdirSync(dir).filter((file) => /^Admin-.*\.js$/.test(file));
+  expect(admin.length).toBe(1);
+  const text = readFileSync(path.join(dir, admin[0]!), 'utf8');
+  expect(text).not.toContain('/login?next=');
+  expect(text).toContain('__ssrkLoader');
+});
+
+test('prod 기본값은 Server-Timing 헤더를 보내지 않는다', async ({ request }) => {
+  const doc = await request.get('/');
+  expect(doc.headers()['server-timing']).toBeUndefined();
+  const data = await request.get('/_data/gold/1');
+  expect(data.headers()['server-timing']).toBeUndefined();
+});

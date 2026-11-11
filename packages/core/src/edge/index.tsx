@@ -59,6 +59,7 @@ const renderTree = async (
   const { headers } = options;
   headers.set('content-type', HTML_CONTENT_TYPE);
   if (options.method === 'HEAD') {
+    options.onHead?.(headers);
     respond(new Response(null, { status: options.status, headers }));
     return;
   }
@@ -96,6 +97,7 @@ const renderTree = async (
     () => clearTimeout(timer),
   );
   if (options.isBot) await stream.allReady.catch(() => {});
+  options.onHead?.(headers);
   respond(
     new Response(stream.pipeThrough(appendDeferred(entries, options)), {
       status: options.status,

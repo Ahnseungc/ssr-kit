@@ -43,6 +43,26 @@ export interface LoaderArgs<Path extends string = string> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Loader = (args: LoaderArgs<any>) => unknown;
 
+/** 미들웨어 인자. context 는 이후 로더가 받는 것과 같은 객체라 값을 붙일 수 있다 */
+export interface MiddlewareArgs<Path extends string = string> {
+  params: Params<Path>;
+  request: SsrRequest;
+  /** 이 라우트 로더와 같은 응답 헤더 객체 (§5.4 병합) */
+  headers: Headers;
+  signal: AbortSignal;
+  context: AppContext;
+}
+
+/**
+ * 라우트 미들웨어 (서버 전용). 루트 → 리프 순서, 로더보다 먼저 실행되는 onion 모델.
+ * next() 를 부르지 않고 끝나면 자동으로 다음으로 넘어간다.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Middleware<Path extends string = any> = (
+  args: MiddlewareArgs<Path>,
+  next: () => Promise<void>,
+) => Promise<void> | void;
+
 export type LoaderData<L> = L extends (...args: never[]) => infer R ? Awaited<R> : never;
 
 export interface HeadArgs<L = unknown> {
@@ -82,9 +102,10 @@ export interface RouteError {
 export interface RouteModule {
   default: ComponentType;
   loader?: Loader;
+  middleware?: Middleware | Middleware[];
   head?: HeadFn;
   ErrorBoundary?: ComponentType<{ error: RouteError }>;
-  /** Vite 플러그인이 클라 번들에서 loader 를 지운 자리에 남기는 표시 */
+  /** Vite 플러그인이 클라 번들에서 loader·middleware 를 지운 자리에 남기는 표시 (서버 데이터 요청 필요) */
   __ssrkLoader?: true;
 }
 
