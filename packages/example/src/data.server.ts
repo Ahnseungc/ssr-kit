@@ -8,8 +8,8 @@ export interface Gold {
 }
 
 const golds: Gold[] = [
-  { id: '1', name: '순금 24K', pricePerGram: 152_000 },
-  { id: '2', name: '18K', pricePerGram: 114_000 },
+  { id: '1', name: '24K Gold', pricePerGram: 152_000 },
+  { id: '2', name: '18K Gold', pricePerGram: 114_000 },
 ];
 
 export const listGolds = async () => {
@@ -30,7 +30,7 @@ export interface GuestbookEntry {
   createdAt: Date;
 }
 
-// 예제라 메모리에 둔다. 서버를 다시 띄우면 비워진다
+// 예제라 Memo리에 둔다. 서버를 다시 띄우면 비워진다
 const guestbook: GuestbookEntry[] = [];
 
 export const listGuestbook = async () => [...guestbook].reverse();

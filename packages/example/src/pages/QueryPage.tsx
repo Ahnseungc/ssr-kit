@@ -15,8 +15,8 @@ const Price = () => {
   const { data, isFetching } = useQuery(goldPriceQuery(fetchGoldPriceFromApi));
   return (
     <p data-testid="query-price">
-      {data ? `${data.pricePerGram.toLocaleString('ko-KR')}원` : '없음'}
-      {isFetching ? ' (갱신 중)' : ''}
+      {data ? `${data.pricePerGram.toLocaleString('en-US')} KRW` : 'none'}
+      {isFetching ? ' (refreshing)' : ''}
     </p>
   );
 };

@@ -1,6 +1,6 @@
 import { type Href, useLocation, useNavigate } from 'ssr-kit';
 
-export const head = () => ({ title: 'ssr-kit 로그인' });
+export const head = () => ({ title: 'ssr-kit log in' });
 
 export default function Login() {
   const { search } = useLocation();
@@ -14,9 +14,9 @@ export default function Login() {
   };
   return (
     <main>
-      <h1>로그인</h1>
+      <h1>Log in</h1>
       <button type="button" onClick={handleLogin}>
-        데모 로그인
+        Demo login
       </button>
     </main>
   );

@@ -28,11 +28,10 @@ nav {
   top: 0;
   z-index: 1;
   display: flex;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
   align-items: center;
-  padding: 10px 12px;
-  overflow-x: auto;
-  white-space: nowrap;
+  padding: 8px 12px;
   background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(8px);

@@ -31,7 +31,7 @@ const slowChart = (delay: number, startedAt: number) =>
   );
 
 export const loader = ({ request }: LoaderArgs<'/stream'>) => ({
-  title: '실시간 시세',
+  title: 'Live prices',
   // await 하지 않고 Promise 그대로 → 셸을 먼저 보내고 준비되면 스트리밍
   chart: slowChart(delayOf(request.url), Date.now()),
 });
@@ -43,7 +43,7 @@ const Chart = ({ chart }: { chart: Promise<ChartData> }) => {
       <strong data-testid="chart">
         {points.join(' → ')} ({at instanceof Date ? 'date' : typeof at})
       </strong>
-      <span className="badge">셸 이후 +{streamedAfterMs}ms 에 스트리밍됨</span>
+      <span className="badge">streamed +{streamedAfterMs}ms after the shell</span>
     </div>
   );
 };
@@ -53,11 +53,14 @@ export default function Stream() {
   return (
     <main>
       <h1>{title}</h1>
-      <p>제목은 셸과 함께 바로, 차트는 데이터가 준비되면 같은 응답으로 이어서 옵니다.</p>
+      <p>
+        The title arrives with the shell. The chart streams into the same response when its data is
+        ready.
+      </p>
       <Suspense
         fallback={
           <p className="skeleton" data-testid="chart-loading">
-            차트 불러오는 중…
+            Loading chart…
           </p>
         }
       >

@@ -30,10 +30,10 @@ const collectScripts = (page: Page) => {
 };
 
 const clickCounter = async (page: Page) => {
-  const button = page.getByRole('button', { name: /눌림/ });
+  const button = page.getByRole('button', { name: /Clicked/ });
   await expect(async () => {
     await button.click();
-    await expect(button).not.toHaveText('눌림 0');
+    await expect(button).not.toHaveText('Clicked 0');
   }).toPass();
 };
 
@@ -89,9 +89,9 @@ test('legacy: nomodule 브라우저 흉내 — SystemJS 레거시 번들만으�
   await clickCounter(page);
 
   const dataRequest = page.waitForRequest((r) => r.url().includes('/_data/gold/1'));
-  await page.getByRole('navigation').getByRole('link', { name: '순금' }).click();
+  await page.getByRole('navigation').getByRole('link', { name: '24K' }).click();
   await dataRequest;
-  await expect(page.getByRole('heading', { name: '순금 24K' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '24K Gold' })).toBeVisible();
 
   const executed = scripts.filter((url) => url.endsWith('.js'));
   expect(executed.some((url) => /polyfills-legacy-/.test(url))).toBe(true);

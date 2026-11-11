@@ -13,6 +13,6 @@ export const goldPriceQuery = (fetchPrice: () => Promise<GoldPrice>) =>
 
 export const fetchGoldPriceFromApi = async (): Promise<GoldPrice> => {
   const response = await fetch('/api/gold-price');
-  if (!response.ok) throw new Error(`시세 API 실패: ${response.status}`);
+  if (!response.ok) throw new Error(`Price API failed: ${response.status}`);
   return response.json();
 };

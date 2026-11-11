@@ -31,5 +31,5 @@ if (isProd) {
 }
 
 app.listen(port, () => {
-  console.log(`ssr-kit 예제: http://localhost:${port} (${isProd ? 'production' : 'dev'})`);
+  console.log(`ssr-kit example: http://localhost:${port} (${isProd ? 'production' : 'dev'})`);
 });

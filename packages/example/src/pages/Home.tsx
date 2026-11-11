@@ -11,7 +11,7 @@ export default function Home() {
   const inputId = useId();
   return (
     <main>
-      <h1>금 시세</h1>
+      <h1>Gold prices</h1>
       <ul>
         {golds.map((gold) => (
           <li key={gold.id}>
@@ -19,13 +19,13 @@ export default function Home() {
           </li>
         ))}
       </ul>
-      <Link to="#memo-section">메모로</Link>
+      <Link to="#memo-section">Jump to memo</Link>
       <label id="memo-section" htmlFor={inputId}>
-        메모
+        Memo
       </label>
       <input id={inputId} data-testid="memo" />
       <button type="button" onClick={() => setCount((c) => c + 1)}>
-        눌림 {count}
+        Clicked {count}
       </button>
     </main>
   );

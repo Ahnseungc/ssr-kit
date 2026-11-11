@@ -9,11 +9,11 @@ export const loader = async ({ params, headers }: LoaderArgs<'/gold/:id'>) => {
   return { gold };
 };
 
-export const head = ({ data }: HeadArgs<typeof loader>) => ({ title: `${data.gold.name} 시세` });
+export const head = ({ data }: HeadArgs<typeof loader>) => ({ title: `${data.gold.name} price` });
 
 export const ErrorBoundary = ({ error }: { error: RouteError }) => (
   <main data-testid="gold-error">
-    <h1>금을 찾을 수 없어요</h1>
+    <h1>Gold not found</h1>
     <p>{error.status}</p>
   </main>
 );
@@ -23,7 +23,7 @@ export default function GoldDetail() {
   return (
     <main>
       <h1>{gold.name}</h1>
-      <p>1g {gold.pricePerGram.toLocaleString('ko-KR')}원</p>
+      <p>1g = {gold.pricePerGram.toLocaleString('en-US')} KRW</p>
     </main>
   );
 }

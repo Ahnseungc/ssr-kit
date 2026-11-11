@@ -42,7 +42,7 @@ const caption = (text) =>
 
 const pause = (ms) => page.waitForTimeout(ms);
 
-// 방명록 제출이 대기 상태를 보이도록 네트워크 지연을 흉내 낸다
+// Guestbook 제출이 대기 상태를 보이도록 네트워크 지연을 흉내 낸다
 await page.route('**/_data/guestbook', async (route) => {
   if (route.request().method() === 'POST') await pause(ACTION_LATENCY_MS);
   await route.continue();
@@ -56,31 +56,45 @@ await page.waitForSelector('[data-testid=chart]');
 await pause(1800);
 
 // 2. Form action (no full reload)
-await page.getByRole('navigation').getByRole('link', { name: '방명록' }).click();
-await page.getByLabel('한마디').waitFor();
+await page.getByRole('navigation').getByRole('link', { name: 'Guestbook' }).click();
+await page.getByLabel('Message').waitFor();
 await caption('2/3 <Form> action: pending state, no page reload');
 await pause(600);
-await page.getByLabel('한마디').pressSequentially('Hello from ssr-kit!', { delay: 45 });
+await page.getByLabel('Message').pressSequentially('Hello from ssr-kit!', { delay: 45 });
 await pause(300);
-await page.getByRole('button', { name: '남기기' }).click();
+await page.getByRole('button', { name: 'Post' }).click();
 await page.getByText('Hello from ssr-kit!', { exact: true }).last().waitFor();
 await pause(1500);
 
 // 3. Middleware guard
 await caption('3/3 Route middleware: auth guard before loaders');
 await pause(700);
-await page.getByRole('navigation').getByRole('link', { name: '관리자' }).click();
-await page.getByRole('button', { name: '데모 로그인' }).waitFor();
+await page.getByRole('navigation').getByRole('link', { name: 'Admin' }).click();
+await page.getByRole('button', { name: 'Demo login' }).waitFor();
 await pause(1200);
-await page.getByRole('button', { name: '데모 로그인' }).click();
+await page.getByRole('button', { name: 'Demo login' }).click();
 await page.getByTestId('admin-user').waitFor();
 await pause(1800);
 
 await context.close();
 await browser.close();
 
-const video = path.join(videoDir, readdirSync(videoDir).find((file) => file.endsWith('.webm')));
+const video = path.join(
+  videoDir,
+  readdirSync(videoDir).find((file) => file.endsWith('.webm')),
+);
 const filter = `fps=${GIF_FPS},scale=${GIF_WIDTH}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=4`;
-execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-ss', TRIM_START_S, '-i', video, '-vf', filter, output]);
+execFileSync('ffmpeg', [
+  '-y',
+  '-loglevel',
+  'error',
+  '-ss',
+  TRIM_START_S,
+  '-i',
+  video,
+  '-vf',
+  filter,
+  output,
+]);
 rmSync(videoDir, { recursive: true, force: true });
 console.log(`demo GIF → ${output}`);

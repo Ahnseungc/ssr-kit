@@ -19,16 +19,16 @@ export const loader = async (_: LoaderArgs<'/guestbook'>) => ({ entries: await l
 export const action = async ({ request }: ActionArgs<'/guestbook'>) => {
   const form = await request.formData();
   const message = String(form.get('message') ?? '').trim();
-  if (!message) return { error: '내용을 입력해 주세요' };
+  if (!message) return { error: 'Please write something' };
   if (message.length > MAX_MESSAGE_LENGTH) {
-    return { error: `${MAX_MESSAGE_LENGTH}자 이하로 써 주세요` };
+    return { error: `Keep it under ${MAX_MESSAGE_LENGTH} characters` };
   }
   await addGuestbookEntry(message);
   // Post/Redirect/Get — 새로고침해도 다시 제출되지 않는다
   redirect('/guestbook');
 };
 
-export const head = (_: HeadArgs<typeof loader>) => ({ title: '방명록' });
+export const head = (_: HeadArgs<typeof loader>) => ({ title: 'Guestbook' });
 
 export default function Guestbook() {
   const { entries } = useLoaderData<typeof loader>();
@@ -39,12 +39,12 @@ export default function Guestbook() {
   const submitting = navigation.state === 'submitting';
   return (
     <main>
-      <h1>방명록</h1>
+      <h1>Guestbook</h1>
       <Form method="post" key={key}>
-        <label htmlFor="guestbook-message">한마디</label>
+        <label htmlFor="guestbook-message">Message</label>
         <input id="guestbook-message" name="message" maxLength={MAX_MESSAGE_LENGTH * 2} />
         <button type="submit" disabled={submitting}>
-          {submitting ? '남기는 중…' : '남기기'}
+          {submitting ? 'Posting…' : 'Post'}
         </button>
       </Form>
       {actionData?.error ? (

@@ -14,13 +14,13 @@ export const loader = ({ context }: LoaderArgs) => ({
   sawRequestStart: typeof context.requestStartedAt === 'number',
 });
 
-export const head = () => ({ title: 'ssr-kit 관리자' });
+export const head = () => ({ title: 'ssr-kit admin' });
 
 export default function Admin() {
   const { user, sawRequestStart } = useLoaderData<typeof loader>();
   return (
     <main>
-      <h1>관리자</h1>
+      <h1>Admin</h1>
       <p data-testid="admin-user">{user}</p>
       <p data-testid="admin-context">{sawRequestStart ? 'context-ok' : 'context-missing'}</p>
     </main>

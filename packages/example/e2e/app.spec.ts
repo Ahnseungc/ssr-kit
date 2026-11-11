@@ -21,6 +21,13 @@ const markDocument = (page: Page) =>
 const isSameDocument = (page: Page) =>
   page.evaluate(() => (window as unknown as { __mark?: boolean }).__mark === true);
 
+/** 메뉴에 없는 경로로 클라 이동: 라우터가 popstate 를 받아 데이터 요청으로 이동한다 */
+const clientNavigate = (page: Page, path: string) =>
+  page.evaluate((to) => {
+    history.pushState({}, '', to);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, path);
+
 const hydrated = (page: Page) =>
   page.waitForFunction(() => document.body.querySelector('nav') && '__SSRK' in window);
 
@@ -30,8 +37,8 @@ test('JS 없이도 SSR HTML 에 데이터·head·프리로드가 들어 있다',
   expect(response.headers()['cache-control']).toBe('private, no-store');
   const html = await response.text();
   expect(html.startsWith('<!DOCTYPE html>')).toBe(true);
-  expect(html).toContain('<title>ssr-kit 예제</title>');
-  expect(html).toContain('순금 24K');
+  expect(html).toContain('<title>ssr-kit example</title>');
+  expect(html).toContain('24K Gold');
   expect(html).toMatch(/<link rel="modulepreload"[^>]+Home-/);
   expect(html).toMatch(/<link rel="stylesheet"[^>]+\.css/);
 });
@@ -40,12 +47,12 @@ test('hydrate 후 불일치 없이 상호작용된다 (useId 포함)', async ({ 
   const errors = collectErrors(page);
   await page.goto('/');
   await hydrated(page);
-  const button = page.getByRole('button', { name: /눌림/ });
+  const button = page.getByRole('button', { name: /Clicked/ });
   await expect(async () => {
     await button.click();
-    await expect(button).not.toHaveText('눌림 0');
+    await expect(button).not.toHaveText('Clicked 0');
   }).toPass();
-  await expect(page.getByLabel('메모')).toBeVisible();
+  await expect(page.getByLabel('Memo')).toBeVisible();
   await expect(page.getByTestId('rendered-at')).toHaveText('date');
   expect(errors).toEqual([]);
 });
@@ -55,11 +62,11 @@ test('Link 이동은 문서를 다시 받지 않고 데이터 엔드포인트만
   await hydrated(page);
   await markDocument(page);
   const dataRequest = page.waitForRequest((r) => r.url().includes('/_data/gold/1'));
-  await page.getByRole('navigation').getByRole('link', { name: '순금' }).click();
+  await page.getByRole('navigation').getByRole('link', { name: '24K' }).click();
   await dataRequest;
-  await expect(page.getByRole('heading', { name: '순금 24K' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '24K Gold' })).toBeVisible();
   await expect(page).toHaveURL('/gold/1');
-  await expect(page).toHaveTitle('순금 24K 시세');
+  await expect(page).toHaveTitle('24K Gold price');
   expect(await isSameDocument(page)).toBe(true);
 });
 
@@ -70,11 +77,11 @@ test('이동마다 매치된 loader 를 데이터 요청 1번으로 실행한다
   });
   await page.goto('/about');
   await hydrated(page);
-  await page.getByRole('link', { name: '홈' }).click();
-  await expect(page.getByRole('heading', { name: '금 시세' })).toBeVisible();
+  await page.getByRole('link', { name: 'Home' }).click();
+  await expect(page.getByRole('heading', { name: 'Gold prices' })).toBeVisible();
   const before = dataRequests.length;
-  await page.getByRole('link', { name: '소개' }).click();
-  await expect(page.getByRole('heading', { name: '소개' })).toBeVisible();
+  await page.getByRole('link', { name: 'About' }).click();
+  await expect(page.getByRole('heading', { name: 'About' })).toBeVisible();
   // 루트 레이아웃에 loader 가 있으므로 /about 도 데이터를 받는다
   expect(dataRequests.length).toBe(before + 1);
 });
@@ -90,16 +97,17 @@ test('일반 에러는 500, prod 에서 내부 메시지를 숨긴다', async ({
   const response = await page.goto('/boom');
   expect(response?.status()).toBe(500);
   await expect(page.getByTestId('root-error')).toContainText('Internal Server Error');
-  await expect(page.locator('body')).not.toContainText('DB 접속 정보');
+  await expect(page.locator('body')).not.toContainText('DB credentials');
 });
 
 test('클라 이동 중 에러도 ErrorBoundary 로 그린다', async ({ page }) => {
   await page.goto('/');
   await hydrated(page);
-  await page.getByRole('link', { name: '없는 금' }).click();
+  // 일부러 404 를 내는 라우트라 메뉴에는 없다. popstate 로 같은 클라 이동 경로를 탄다
+  await clientNavigate(page, '/gold/missing');
   await expect(page.getByTestId('gold-error')).toContainText('404');
-  await page.getByRole('link', { name: '순금' }).first().click();
-  await expect(page.getByRole('heading', { name: '순금 24K' })).toBeVisible();
+  await page.getByRole('link', { name: '24K' }).first().click();
+  await expect(page.getByRole('heading', { name: '24K Gold' })).toBeVisible();
 });
 
 test('redirect: 문서 요청은 301, 클라 이동은 대상 경로로 교체', async ({ page, request }) => {
@@ -109,7 +117,7 @@ test('redirect: 문서 요청은 301, 클라 이동은 대상 경로로 교체',
 
   await page.goto('/');
   await hydrated(page);
-  await page.getByRole('link', { name: '옛 주소' }).click();
+  await page.getByRole('link', { name: 'Old URL' }).click();
   await expect(page).toHaveURL('/gold/2');
   await expect(page.getByRole('heading', { name: '18K' })).toBeVisible();
 });
@@ -123,21 +131,21 @@ test('뒤로가기·앞으로가기와 스크롤 복원', async ({ page }) => {
     window.scrollTo(0, 400);
   });
   // click() 은 요소를 화면에 보이게 스크롤하므로 스크롤 없이 이벤트만 보낸다
-  await page.getByRole('link', { name: '순금' }).first().dispatchEvent('click', { button: 0 });
-  await expect(page.getByRole('heading', { name: '순금 24K' })).toBeVisible();
+  await page.getByRole('link', { name: '24K' }).first().dispatchEvent('click', { button: 0 });
+  await expect(page.getByRole('heading', { name: '24K Gold' })).toBeVisible();
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
 
   await page.goBack();
-  await expect(page.getByRole('heading', { name: '금 시세' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Gold prices' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(400);
 
   await page.goForward();
-  await expect(page.getByRole('heading', { name: '순금 24K' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '24K Gold' })).toBeVisible();
 });
 
 test('ssr:false 라우트는 셸을 보내고 클라에서 데이터를 받아 그린다', async ({ page, request }) => {
   const html = await (await request.get('/shell')).text();
-  expect(html).not.toContain('SPA 셸');
+  expect(html).not.toContain('SPA shell');
   await page.goto('/shell');
   await expect(page.getByTestId('shell')).toHaveText('client-fetch');
 });
@@ -149,11 +157,11 @@ test('hover 프리패치한 데이터를 이동 때 재사용한다', async ({ p
   page.on('request', (r) => {
     if (r.url().includes('/_data/gold/1')) dataRequests.push(r.url());
   });
-  const link = page.getByRole('navigation').getByRole('link', { name: '순금' });
+  const link = page.getByRole('navigation').getByRole('link', { name: '24K' });
   await link.hover();
   await expect.poll(() => dataRequests.length).toBe(1);
   await link.click();
-  await expect(page.getByRole('heading', { name: '순금 24K' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '24K Gold' })).toBeVisible();
   expect(dataRequests.length).toBe(1);
 });
 
@@ -162,7 +170,7 @@ test('클라이언트 번들에 서버 전용 코드가 없다', () => {
   for (const file of readdirSync(dir)) {
     const text = readFileSync(path.join(dir, file), 'utf8');
     expect(text, file).not.toContain('ssr-kit-server-only-secret');
-    expect(text, file).not.toContain('DB 접속 정보');
+    expect(text, file).not.toContain('DB credentials');
   }
 });
 
@@ -171,7 +179,7 @@ test('Promise 데이터: 셸을 먼저 보내고 Suspense 경계를 스트리밍
   request,
 }) => {
   const html = await (await request.get('/stream')).text();
-  expect(html).toContain('차트 불러오는 중');
+  expect(html).toContain('Loading chart');
   expect(html).toMatch(/__SSRKR\(0,1,/);
 
   const errors = collectErrors(page);
@@ -184,8 +192,8 @@ test('Promise 데이터: 셸을 먼저 보내고 Suspense 경계를 스트리밍
 test('Promise 데이터: 클라 이동으로 들어와도 Suspense 로 그린다', async ({ page }) => {
   await page.goto('/');
   await hydrated(page);
-  await page.getByRole('link', { name: '스트리밍' }).click();
-  await expect(page.getByRole('heading', { name: '실시간 시세' })).toBeVisible();
+  await page.getByRole('link', { name: 'Streaming' }).click();
+  await expect(page.getByRole('heading', { name: 'Live prices' })).toBeVisible();
   await expect(page.getByTestId('chart')).toContainText('(date)');
 });
 
@@ -193,8 +201,10 @@ test('prerender CLI 가 정적 HTML 을 만든다', () => {
   const root = path.join(import.meta.dirname, '..');
   execFileSync('pnpm', ['run', 'prerender'], { cwd: root, stdio: 'pipe' });
   const html = readFileSync(path.join(root, 'dist/prerendered/gold/1/index.html'), 'utf8');
-  expect(html).toContain('순금 24K');
-  expect(readFileSync(path.join(root, 'dist/prerendered/index.html'), 'utf8')).toContain('금 시세');
+  expect(html).toContain('24K Gold');
+  expect(readFileSync(path.join(root, 'dist/prerendered/index.html'), 'utf8')).toContain(
+    'Gold prices',
+  );
 });
 
 test('useRevalidate: 문서를 다시 받지 않고 로더만 다시 실행한다', async ({ page }) => {
@@ -203,7 +213,7 @@ test('useRevalidate: 문서를 다시 받지 않고 로더만 다시 실행한�
   await markDocument(page);
   const before = await page.getByTestId('rendered-ms').textContent();
   const dataRequest = page.waitForRequest((r) => r.url().includes('/_data/about'));
-  await page.getByRole('button', { name: '새로고침' }).click();
+  await page.getByRole('button', { name: 'Revalidate' }).click();
   await dataRequest;
   await expect(page.getByTestId('rendered-ms')).not.toHaveText(before!);
   expect(await isSameDocument(page)).toBe(true);
@@ -213,10 +223,10 @@ test('useRevalidate: 문서를 다시 받지 않고 로더만 다시 실행한�
 test('useNavigation: 느린 이동 중 로딩 상태를 보여 준다', async ({ page }) => {
   await page.goto('/');
   await hydrated(page);
-  await page.getByRole('link', { name: '스트리밍' }).click();
-  await expect(page.getByText('불러오는 중…')).toBeVisible();
-  await expect(page.getByRole('heading', { name: '실시간 시세' })).toBeVisible();
-  await expect(page.getByText('불러오는 중…')).toBeHidden();
+  await page.getByRole('link', { name: 'Streaming' }).click();
+  await expect(page.getByText('Loading…')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Live prices' })).toBeVisible();
+  await expect(page.getByText('Loading…')).toBeHidden();
 });
 
 test('해시 링크는 데이터 요청 없이 URL 해시만 바꾼다', async ({ page }) => {
@@ -227,7 +237,7 @@ test('해시 링크는 데이터 요청 없이 URL 해시만 바꾼다', async (
     if (r.url().includes('/_data/')) dataRequests.push(r.url());
   });
   await markDocument(page);
-  await page.getByRole('link', { name: '메모로' }).click();
+  await page.getByRole('link', { name: 'Jump to memo' }).click();
   await expect(page).toHaveURL('/#memo-section');
   expect(dataRequests).toEqual([]);
   expect(await isSameDocument(page)).toBe(true);
@@ -239,7 +249,7 @@ test('수정 키(Ctrl/Meta) 클릭은 가로채지 않는다', async ({ page, co
   const popup = context.waitForEvent('page');
   await page
     .getByRole('navigation')
-    .getByRole('link', { name: '소개' })
+    .getByRole('link', { name: 'About' })
     .click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
   const opened = await popup;
   await opened.waitForLoadState();
@@ -249,13 +259,13 @@ test('수정 키(Ctrl/Meta) 클릭은 가로채지 않는다', async ({ page, co
 
 test('다른 origin 으로의 redirect 는 클라 이동에서도 문서 이동으로 따라간다', async ({ page }) => {
   await page.route('https://example.com/**', (route) =>
-    route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<h1>외부 사이트</h1>' }),
+    route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<h1>External site</h1>' }),
   );
   await page.goto('/');
   await hydrated(page);
-  await page.getByRole('link', { name: '외부' }).click();
+  await clientNavigate(page, '/external');
   await expect(page).toHaveURL('https://example.com/ssr-kit');
-  await expect(page.getByRole('heading', { name: '외부 사이트' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'External site' })).toBeVisible();
 });
 
 test('TanStack Query 레시피: SSR 데이터로 hydrate 하고 첫 로드에 다시 요청하지 않는다', async ({
@@ -263,7 +273,7 @@ test('TanStack Query 레시피: SSR 데이터로 hydrate 하고 첫 로드에 �
   request,
 }) => {
   const html = await (await request.get('/query')).text();
-  expect(html).toContain('152,000원');
+  expect(html).toContain('152,000 KRW');
 
   const apiCalls: string[] = [];
   page.on('request', (r) => {
@@ -272,7 +282,7 @@ test('TanStack Query 레시피: SSR 데이터로 hydrate 하고 첫 로드에 �
   const errors = collectErrors(page);
   await page.goto('/query');
   await hydrated(page);
-  await expect(page.getByTestId('query-price')).toHaveText('152,000원');
+  await expect(page.getByTestId('query-price')).toHaveText('152,000 KRW');
   await page.waitForTimeout(300);
   expect(apiCalls).toEqual([]);
   expect(errors).toEqual([]);
@@ -297,8 +307,8 @@ test('TanStack Query 레시피: 클라 이동으로 들어와도 서버 데이�
   });
   await page.goto('/');
   await hydrated(page);
-  await page.getByRole('link', { name: '쿼리' }).click();
-  await expect(page.getByTestId('query-price')).toHaveText('152,000원');
+  await page.getByRole('link', { name: 'Query' }).click();
+  await expect(page.getByTestId('query-price')).toHaveText('152,000 KRW');
   expect(apiCalls).toEqual([]);
 });
 
@@ -332,11 +342,11 @@ test('미들웨어 가드: 클라 이동도 데이터 요청에서 막혀 로그
   await page.goto('/');
   await hydrated(page);
   await markDocument(page);
-  await page.getByRole('navigation').getByRole('link', { name: '관리자' }).click();
+  await page.getByRole('navigation').getByRole('link', { name: 'Admin' }).click();
   await expect(page).toHaveURL('/login?next=/admin');
-  await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible();
 
-  await page.getByRole('button', { name: '데모 로그인' }).click();
+  await page.getByRole('button', { name: 'Demo login' }).click();
   await expect(page).toHaveURL('/admin');
   await expect(page.getByTestId('admin-user')).toHaveText('demo');
   await expect(page.getByTestId('admin-context')).toHaveText('context-ok');

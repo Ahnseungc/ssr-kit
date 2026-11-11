@@ -23,8 +23,8 @@ export const loader = ({ context }: LoaderArgs) => ({
 });
 
 export const head = (_: HeadArgs<typeof loader>) => ({
-  title: 'ssr-kit 예제',
-  meta: [{ name: 'description', content: 'ssr-kit 예제 앱' }],
+  title: 'ssr-kit example',
+  meta: [{ name: 'description', content: 'ssr-kit example app' }],
 });
 
 export const ErrorBoundary = ({ error }: { error: RouteError }) => (
@@ -43,26 +43,23 @@ export default function RootLayout() {
   return (
     <>
       <nav>
-        <Link to="/">홈</Link>
-        <Link to="/gold/1">순금</Link>
+        <Link to="/">Home</Link>
+        <Link to="/gold/1">24K</Link>
         <Link to="/gold/2" prefetch="viewport">
           18K
         </Link>
-        <Link to="/old-gold/2">옛 주소</Link>
-        <Link to="/gold/missing">없는 금</Link>
-        <Link to="/boom">에러</Link>
-        <Link to="/about">소개</Link>
-        <Link to="/stream">스트리밍</Link>
-        <Link to="/shell">셸</Link>
-        <Link to="/external">외부</Link>
-        <Link to="/query">쿼리</Link>
-        <Link to="/admin">관리자</Link>
-        <Link to="/guestbook">방명록</Link>
+        <Link to="/old-gold/2">Old URL</Link>
+        <Link to="/about">About</Link>
+        <Link to="/stream">Streaming</Link>
+        <Link to="/shell">SPA shell</Link>
+        <Link to="/query">Query</Link>
+        <Link to="/admin">Admin</Link>
+        <Link to="/guestbook">Guestbook</Link>
         <button type="button" onClick={revalidate}>
-          새로고침
+          Revalidate
         </button>
       </nav>
-      {navigation.state === 'loading' ? <p className="loading">불러오는 중…</p> : null}
+      {navigation.state === 'loading' ? <p className="loading">Loading…</p> : null}
       <p data-testid="rendered-at" hidden>
         {renderedAt instanceof Date ? 'date' : typeof renderedAt}
       </p>
