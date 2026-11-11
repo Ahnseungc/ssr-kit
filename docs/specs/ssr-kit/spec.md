@@ -503,6 +503,7 @@ interface AssetManifest {
 }
 ```
 - 서버 렌더 중 매치된 라우트 모듈들의 JS 는 `ReactDOM.preloadModule(href)`, CSS 는 `ReactDOM.preinit(href, { as: 'style', precedence: 'default' })`. React Float 가 `<head>` 에 넣고 hydrate 비교에서 빠진다.
+- dev 에서는 가상 엔트리가 의존성 스캔에 잡히지 않아 첫 로드에 재최적화(React 두 벌)가 생긴다. 플러그인이 client 환경 `optimizeDeps.include` 에 react·react-dom·jsx-runtime 을 넣는다.
 - 클라엔 매니페스트가 없다(V3). 클라 이동·프리패치는 `route.module()` 호출 — Vite 의 dynamic import preload helper 가 의존 청크·CSS 를 불러온다.
 - 모든 URL 앞에 Vite `base`.
 
@@ -545,6 +546,9 @@ export function createDevServer(opts: { root: string; configFile?: string }): Pr
 export function hydrate(opts: {
   routes: RouteDef[];
   Document?: React.ComponentType<DocumentProps>;
+  /** 플러그인이 가상 엔트리에서 넘김 */
+  dataPrefix?: string;
+  dev?: boolean;
   onError?: (error: unknown) => void;
 }): Promise<void>;
 export function readSsrData<T>(): T; // RT6 용
@@ -572,6 +576,7 @@ navigate(to)
 - `history.scrollRestoration = 'manual'`, 위치는 `sessionStorage` 에 history key 별로 저장.
 - 데이터 요청 네트워크 에러 → `location.assign(to)`.
 - 데이터 캐시 없음(G2). `intent` 프리패치 결과는 직후 1회 네비게이션에 한해 재사용(10초 이내).
+- 프리패치 항목은 모듈 로드를 기다리지 않고 즉시 등록한다. 클릭은 mousedown 의 focus 프리패치 직후에 오므로, 늦게 등록하면 같은 데이터를 두 번 요청한다.
 
 ### 8.3 프리패치 (RT4)
 

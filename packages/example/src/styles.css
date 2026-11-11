@@ -1,0 +1,23 @@
+:root {
+  --fg: #1d1d1f;
+  --bg: #ffffff;
+  --accent: #b8860b;
+}
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+nav {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+}
+main {
+  padding: 16px;
+}
+.loading {
+  color: var(--accent);
+}
