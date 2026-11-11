@@ -19,6 +19,11 @@ export interface AdapterOptions<Req> {
   serverTiming?: boolean;
   /** 요청마다 측정값 (로깅용). 문서는 셸이 나간 뒤, 데이터는 응답 직후 */
   onTiming?: (entries: TimingEntry[], info: { url: string }) => void;
+  /**
+   * action 요청 CSRF 검사에서 요청 host 외에 허용할 origin (예: 'https://app.example.com').
+   * 프록시가 Host 를 바꾸는 배포에서 공개 origin 을 넣는다
+   */
+  allowedOrigins?: string[];
 }
 
 const DEFAULT_RENDER_TIMEOUT_MS = 10_000;
@@ -44,5 +49,6 @@ export const toHandleOptions = <Req>(
     serverTiming: options.serverTiming ?? options.build.dev,
     onTiming: options.onTiming,
     unmatched,
+    allowedOrigins: options.allowedOrigins,
   };
 };

@@ -1,7 +1,7 @@
 import { useContext } from 'react';
 
 import type { Href } from '../core/href';
-import type { AppContext, LoaderData } from '../core/types';
+import type { ActionData, AppContext, LoaderData } from '../core/types';
 import {
   type NavigateOptions,
   type NavigationState,
@@ -34,6 +34,12 @@ export const useNavigation = (): NavigationState => useRouterState().navigation;
 
 export const useNavigate = (): ((to: Href, options?: NavigateOptions) => void) =>
   useContext(RouterActionsContext).navigate;
+
+export const useSubmit = () => useContext(RouterActionsContext).submit;
+
+/** 마지막 action 반환값. 이동하면 사라진다 */
+export const useActionData = <A = unknown>(): ActionData<A> | undefined =>
+  useRouterState().payload.actionData as ActionData<A> | undefined;
 
 export const useRevalidate = () => useContext(RouterActionsContext).revalidate;
 

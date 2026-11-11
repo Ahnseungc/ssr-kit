@@ -13,6 +13,13 @@ export type NodeHandlerOptions = AdapterOptions<IncomingMessage>;
 
 type Next = (error?: unknown) => void;
 
+/** 앞선 미들웨어(body-parser 등)가 이미 읽었으면 빈 본문이 된다 */
+const readNodeBody = async (req: IncomingMessage) => {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of req) chunks.push(chunk as Uint8Array);
+  return Buffer.concat(chunks);
+};
+
 export const toSsrRequest = (req: IncomingMessage): SsrRequest => {
   const encrypted = (req.socket as TLSSocket).encrypted === true;
   const url = new URL(
@@ -25,7 +32,7 @@ export const toSsrRequest = (req: IncomingMessage): SsrRequest => {
     if (Array.isArray(value)) value.forEach((v) => headers.append(key, v));
     else headers.set(key, value);
   }
-  return { url, method: req.method ?? 'GET', headers, raw: req };
+  return { url, method: req.method ?? 'GET', headers, raw: req, readBody: () => readNodeBody(req) };
 };
 
 /** 로더에서 Node 원본 요청(미들웨어가 붙인 필드 등)이 필요할 때 */
@@ -67,12 +74,6 @@ export const fail = (res: ServerResponse, error: unknown, next?: Next) => {
 export const createSsrHandler =
   (options: NodeHandlerOptions) =>
   async (req: IncomingMessage, res: ServerResponse, next?: Next): Promise<void> => {
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      if (next) return next();
-      res.statusCode = 405;
-      res.end('Method Not Allowed');
-      return;
-    }
     try {
       const result = await handleRequest(
         options.build,

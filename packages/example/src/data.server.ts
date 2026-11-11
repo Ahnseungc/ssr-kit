@@ -23,3 +23,20 @@ export const currentGoldPrice = async () => ({
 });
 
 export const findGold = async (id: string) => golds.find((gold) => gold.id === id) ?? null;
+
+export interface GuestbookEntry {
+  id: number;
+  message: string;
+  createdAt: Date;
+}
+
+// 예제라 메모리에 둔다. 서버를 다시 띄우면 비워진다
+const guestbook: GuestbookEntry[] = [];
+
+export const listGuestbook = async () => [...guestbook].reverse();
+
+export const addGuestbookEntry = async (message: string) => {
+  const entry = { id: guestbook.length + 1, message, createdAt: new Date() };
+  guestbook.push(entry);
+  return entry;
+};

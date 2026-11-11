@@ -26,6 +26,7 @@
 | D4 | `redirect()`·`notFound()`·상태·헤더 | 구현 | 단위 `loaders`·`web`·`edge`, E2E |
 | D5 | TanStack Query 레시피 | 구현 | 예제 `/query`, E2E (SSR·클라 이동 모두 API 재요청 0) |
 | D6 | 클라 이동용 데이터 엔드포인트 | 구현 | 단위 `stream`·`web`·`edge`, E2E |
+| D7 | 데이터 변경 `action`·`<Form>`·`useSubmit`·`useActionData`·CSRF (스펙 §3.8) | 구현 | 단위 `actions`(실제 http 서버: urlencoded·multipart·JSON·303·경계·405·next·403)·`client-actions`·`web`·`edge`·`fastify`·`strip`, E2E `actions.spec` (JS 제출·검증·403·JS 비활성) |
 | A1 | `head()` 병합 | 구현 | 단위 `loaders`(mergeHead), E2E (이동 시 title 변경) |
 | A2 | 매니페스트 기반 modulepreload·CSS | 구현 | 단위 `build`·`render`, E2E (SSR HTML 에 preload·stylesheet) |
 | A3 | CSP nonce | 구현 | 단위 `render` (모든 script 에 nonce), `stream` (settle 스크립트) |

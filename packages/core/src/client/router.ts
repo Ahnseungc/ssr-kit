@@ -3,7 +3,13 @@ import { flushSync } from 'react-dom';
 import { createMatcher } from '../core/match';
 import { deserialize } from '../core/serialize';
 import type { RouteDef, RouteMatch, RouteModule, SsrPayload } from '../core/types';
-import type { NavigateOptions, RouterActions, RouterState } from '../react/context';
+import type {
+  NavigateOptions,
+  RouterActions,
+  RouterState,
+  SubmitOptions,
+  SubmitTarget,
+} from '../react/context';
 import { showDevOverlay } from './overlay';
 
 type DataResponse =
@@ -38,6 +44,33 @@ const needsData = (modules: RouteModule[]) =>
   modules.some((m) => m.loader || m.middleware || m.__ssrkLoader);
 
 const loadModules = (matches: RouteMatch[]) => Promise.all(matches.map((m) => m.route.module()));
+
+const toFormData = (target: SubmitTarget) => {
+  if (target instanceof FormData) return target;
+  const formData = new FormData();
+  const entries = target instanceof URLSearchParams ? target : Object.entries(target);
+  for (const [key, value] of entries) formData.append(key, value);
+  return formData;
+};
+
+/** 파일이 없으면 JS 없는 폼과 같은 urlencoded 로 보낸다 */
+const encodeBody = (formData: FormData): FormData | URLSearchParams => {
+  const params = new URLSearchParams();
+  for (const [key, value] of formData) {
+    if (typeof value !== 'string') return formData;
+    params.append(key, value);
+  }
+  return params;
+};
+
+interface Commit {
+  mode: Mode;
+  url: URL;
+  userState: unknown;
+  matches: RouteMatch[];
+  modules: RouteModule[];
+  payload: SsrPayload;
+}
 
 export interface ClientRouterInit {
   routes: RouteDef[];
@@ -161,19 +194,15 @@ export const createClientRouter = ({
     if (current.signal.aborted) return;
     controller = null;
 
-    if (response?.type === 'redirect') {
-      const target = new URL(response.to, url);
-      if (target.origin !== window.location.origin || hops >= MAX_REDIRECTS) {
-        return window.location.assign(target.href);
-      }
-      const nextMode = mode === 'revalidate' || mode === 'pop' ? 'replace' : mode;
-      return go(target.href, nextMode, userState, hops + 1);
-    }
+    if (response?.type === 'redirect') return followRedirect(response, url, mode, userState, hops);
 
     const payload: SsrPayload = response
       ? deserialize<SsrPayload>(response.payload)
       : { routes: matches.map((m) => m.id), data: {}, status: 200 };
+    commit({ mode, url, userState, matches, modules, payload });
+  };
 
+  const commit = ({ mode, url, userState, matches, modules, payload }: Commit) => {
     if (state.dev) showDevOverlay(payload.error?.error);
     saveScroll();
     const key = writeHistory(mode, url, userState);
@@ -193,6 +222,86 @@ export const createClientRouter = ({
       }),
     );
     restoreScroll(mode, url, key);
+  };
+
+  const followRedirect = (
+    response: Extract<DataResponse, { type: 'redirect' }>,
+    url: URL,
+    mode: Mode,
+    userState: unknown,
+    hops: number,
+  ) => {
+    const target = new URL(response.to, url);
+    if (target.origin !== window.location.origin || hops >= MAX_REDIRECTS) {
+      return window.location.assign(target.href);
+    }
+    const nextMode = mode === 'revalidate' || mode === 'pop' ? 'replace' : mode;
+    return go(target.href, nextMode, userState, hops + 1);
+  };
+
+  const submit = async (target: SubmitTarget, options: SubmitOptions = {}): Promise<void> => {
+    const { pathname, search } = state.location;
+    const url = new URL(options.action ?? pathname + search, window.location.href);
+    const method = options.method ?? 'post';
+    const formData = toFormData(target);
+    if (method === 'get') {
+      const params = new URLSearchParams();
+      for (const [key, value] of formData) if (typeof value === 'string') params.append(key, value);
+      url.search = params.toString();
+      return go(url.href, options.replace ? 'replace' : 'push');
+    }
+    if (url.origin !== window.location.origin) {
+      throw new Error(`다른 origin 으로는 submit 할 수 없다: ${url.href}`);
+    }
+    // 같은 주소로 보내면 revalidate 처럼 기록·스크롤을 그대로 둔다
+    const sameUrl = url.pathname === pathname && url.search === search;
+    let mode: Mode = options.replace ? 'replace' : 'push';
+    if (sameUrl) mode = 'revalidate';
+    const userState = sameUrl ? state.location.state : undefined;
+
+    controller?.abort();
+    const current = new AbortController();
+    controller = current;
+    setState({
+      navigation: {
+        state: 'submitting',
+        location: url.pathname + url.search,
+        formMethod: method.toUpperCase(),
+        formData,
+      },
+    });
+
+    const matches = safeMatch(url.pathname) ?? [];
+    let modules: RouteModule[];
+    let response: DataResponse;
+    try {
+      [modules, response] = await Promise.all([
+        loadModules(matches),
+        fetch(`${dataPrefix}${url.pathname}${url.search}`, {
+          method: method.toUpperCase(),
+          body: encodeBody(formData),
+          signal: current.signal,
+          headers: { accept: 'application/json' },
+        }).then((r) => r.json() as Promise<DataResponse>),
+      ]);
+    } catch (error) {
+      if (current.signal.aborted) return;
+      controller = null;
+      setState({ navigation: { state: 'idle' } });
+      throw error;
+    }
+    if (current.signal.aborted) return;
+    controller = null;
+
+    if (response.type === 'redirect') return followRedirect(response, url, mode, userState, 0);
+    commit({
+      mode,
+      url,
+      userState,
+      matches,
+      modules,
+      payload: deserialize<SsrPayload>(response.payload),
+    });
   };
 
   const prefetch = (to: string, withData: boolean) => {
@@ -225,6 +334,7 @@ export const createClientRouter = ({
       void go(window.location.href, 'revalidate', state.location.state);
     },
     prefetch,
+    submit,
   };
 
   window.addEventListener('popstate', () => {

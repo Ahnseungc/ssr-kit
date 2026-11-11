@@ -15,6 +15,7 @@ export default defineRoutes([
       { id: 'query', path: 'query', module: () => import('./pages/QueryPage') },
       { id: 'admin', path: 'admin', module: () => import('./pages/Admin') },
       { id: 'login', path: 'login', module: () => import('./pages/Login') },
+      { id: 'guestbook', path: 'guestbook', module: () => import('./pages/Guestbook') },
       { id: 'shell', path: 'shell', ssr: false, module: () => import('./pages/Shell') },
     ],
   },

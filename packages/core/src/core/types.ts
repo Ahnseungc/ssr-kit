@@ -6,6 +6,15 @@ export interface SsrRequest {
   method: string;
   headers: Headers;
   raw: unknown;
+  /** 어댑터가 넣는 본문 원천. 직접 부르지 말고 action 의 `request.formData()` 등을 쓴다 */
+  readBody?: () => Promise<Uint8Array | ArrayBuffer>;
+}
+
+/** action 이 받는 요청. 본문은 처음 읽을 때 한 번만 소비하고 이후 호출은 같은 내용을 다시 해석한다 */
+export interface ActionRequest extends SsrRequest {
+  formData(): Promise<FormData>;
+  json<T = unknown>(): Promise<T>;
+  text(): Promise<string>;
 }
 
 /** 사용자가 declaration merging 으로 확장 */
@@ -65,6 +74,18 @@ export type Middleware<Path extends string = any> = (
 
 export type LoaderData<L> = L extends (...args: never[]) => infer R ? Awaited<R> : never;
 
+export interface ActionArgs<Path extends string = string> extends Omit<
+  LoaderArgs<Path>,
+  'request'
+> {
+  request: ActionRequest;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Action = (args: ActionArgs<any>) => unknown;
+
+export type ActionData<A> = A extends (...args: never[]) => infer R ? Awaited<R> : never;
+
 export interface HeadArgs<L = unknown> {
   data: LoaderData<L>;
   params: Record<string, string | undefined>;
@@ -103,6 +124,8 @@ export interface RouteModule {
   default: ComponentType;
   loader?: Loader;
   middleware?: Middleware | Middleware[];
+  /** 서버 전용. POST·PUT·PATCH·DELETE 요청 처리 */
+  action?: Action;
   head?: HeadFn;
   ErrorBoundary?: ComponentType<{ error: RouteError }>;
   /** Vite 플러그인이 클라 번들에서 loader·middleware 를 지운 자리에 남기는 표시 (서버 데이터 요청 필요) */
@@ -145,4 +168,6 @@ export interface SsrPayload {
   status: number;
   /** ssr:false 셸 응답 */
   shell?: boolean;
+  /** 이 응답을 만든 action 의 반환값 */
+  actionData?: unknown;
 }

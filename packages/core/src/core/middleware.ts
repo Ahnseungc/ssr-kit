@@ -83,6 +83,8 @@ export interface RunRouteOptions extends Omit<RunLoadersOptions, 'onError'> {
   onError?: (error: unknown, source: 'middleware' | 'loader') => void;
   /** 미들웨어 총 시간(로더 제외)과 로더별 시간 (ms) */
   onTiming?: (name: 'middleware' | { routeId: string }, ms: number) => void;
+  /** 미들웨어 맨 안쪽에서 실행할 단계. 기본: 로더. 변경 요청은 action → 로더 (runAction) */
+  inner?: (options: RunLoadersOptions) => Promise<LoaderResult>;
 }
 
 const now = () => performance.now();
@@ -155,7 +157,7 @@ export const runRoute = async (options: RunRouteOptions): Promise<LoaderResult> 
     },
     async () => {
       const innerStart = now();
-      loaded = await runLoaders(loaderOptions);
+      loaded = await (options.inner ?? runLoaders)(loaderOptions);
       innerMs = now() - innerStart;
     },
   );

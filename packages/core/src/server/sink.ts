@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type ErrorPhase = 'middleware' | 'loader' | 'shell' | 'stream' | 'data';
+export type ErrorPhase = 'middleware' | 'loader' | 'action' | 'shell' | 'stream' | 'data';
 
 export interface TreeRenderOptions {
   method: string;

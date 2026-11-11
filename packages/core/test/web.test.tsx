@@ -5,13 +5,23 @@ import { notFound, redirect } from '../src/core/errors';
 import type { RouteModule } from '../src/core/types';
 import { ssrKit } from '../src/hono/index';
 import { DefaultDocument } from '../src/react/components';
-import { useLoaderData } from '../src/react/hooks';
+import { useActionData, useLoaderData } from '../src/react/hooks';
 import type { ServerBuild } from '../src/server/build';
 import { createWebHandler, getWebRequest } from '../src/web/index';
 
 const Page = () => <h1>{useLoaderData<() => { name: string }>().name}</h1>;
 
+const Echo = () => <p id="echo">{JSON.stringify(useActionData() ?? null)}</p>;
+
 const modules: Record<string, RouteModule> = {
+  echo: {
+    default: Echo,
+    action: async ({ request }) => {
+      const form = await request.formData();
+      if (form.get('go')) redirect('/page');
+      return { name: form.get('name') };
+    },
+  },
   page: {
     default: Page,
     loader: ({ request, headers, context }) => {
@@ -70,8 +80,25 @@ describe('createWebHandler', () => {
     expect((await handle(get('/nope')))!.status).toBe(404);
   });
 
-  it('GET·HEAD 외 메서드는 405', async () => {
+  it('GET·HEAD 외 메서드는 action 이 없으면 405 (next 모드면 null)', async () => {
     expect((await handle(get('/page', { method: 'POST' })))!.status).toBe(405);
+    const next = createWebHandler({ build }, 'next');
+    expect(
+      await next(get('/page', { method: 'POST', headers: { origin: 'http://localhost' } })),
+    ).toBeNull();
+  });
+
+  const postForm = (path: string, values: Record<string, string>, origin = 'http://localhost') =>
+    get(path, { method: 'POST', body: new URLSearchParams(values), headers: { origin } });
+
+  it('action: Request 본문을 읽고 actionData 로 렌더, redirect 는 303, 출처가 다르면 403', async () => {
+    const response = (await handle(postForm('/echo', { name: '웹' })))!;
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('{&quot;name&quot;:&quot;웹&quot;}');
+    const redirected = (await handle(postForm('/echo', { go: '1' })))!;
+    expect(redirected.status).toBe(303);
+    expect(redirected.headers.get('location')).toBe('/page');
+    expect((await handle(postForm('/echo', {}, 'https://evil.test')))!.status).toBe(403);
   });
 });
 
@@ -79,6 +106,7 @@ describe('Hono ssrKit', () => {
   const app = new Hono();
   app.use('*', ssrKit({ build, getContext: (c) => ({ who: c.req.header('x-who') ?? 'hono' }) }));
   app.get('/api/ping', (c) => c.text('pong'));
+  app.post('/page', (c) => c.text('api'));
 
   it('렌더하고 getContext 에 요청별 Context 를 넘긴다', async () => {
     const [first, second] = await Promise.all([
@@ -92,5 +120,18 @@ describe('Hono ssrKit', () => {
   it('매치가 없으면 다음 핸들러로 넘긴다', async () => {
     const response = await app.request('/api/ping');
     expect(await response.text()).toBe('pong');
+  });
+
+  it('action: c.req.raw 본문을 읽는다. action 이 없는 POST 는 다음 핸들러로', async () => {
+    const init = (body: URLSearchParams) => ({
+      method: 'POST',
+      body,
+      headers: { origin: 'http://localhost' },
+    });
+    const response = await app.request('/_data/echo', init(new URLSearchParams({ name: '호노' })));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ type: 'data' });
+    const passed = await app.request('/page', init(new URLSearchParams()));
+    expect(await passed.text()).toBe('api');
   });
 });

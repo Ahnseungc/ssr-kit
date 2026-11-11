@@ -12,6 +12,7 @@ const bindContext = (options: HonoSsrOptions, c: Context): EdgeHandlerOptions =>
     build: options.build,
     renderTimeout: options.renderTimeout,
     onError: options.onError,
+    allowedOrigins: options.allowedOrigins,
     getContext: getContext && (() => getContext(c)),
     getNonce: getNonce && (() => getNonce(c)),
     isBot: typeof isBot === 'function' ? () => isBot(c) : isBot,

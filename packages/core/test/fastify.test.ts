@@ -34,6 +34,15 @@ const routes: RouteDef[] = [
         loader: () => notFound(),
       }),
       route('old', { default: Hello, loader: () => redirect('/hello', 301) }),
+      route('greet', {
+        default: Hello,
+        loader: () => ({ name: 'greet' }),
+        action: async ({ request }) => {
+          const form = await request.formData();
+          if (form.get('go')) redirect('/hello');
+          return { greeted: form.get('name') };
+        },
+      }),
       route('cookies', {
         default: Hello,
         loader: ({ headers }: LoaderArgs) => {
@@ -130,5 +139,54 @@ describe('ssr-kit/fastify', () => {
     await app.register(ssrKit, { build, getContext });
     await app.inject({ method: 'GET', url: '/hello' });
     expect(getContext).toHaveBeenCalledWith(expect.objectContaining({ url: '/hello' }));
+  });
+
+  const origin = 'http://localhost:80';
+
+  it('action: urlencoded 본문을 Fastify 가 소비하지 않고 action 이 읽는다', async () => {
+    const app = await createApp();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/_data/greet',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin,
+        host: 'localhost:80',
+      },
+      payload: 'name=%ED%8C%A8%EC%8A%A4%ED%8B%B0%ED%8C%8C%EC%9D%B4',
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ type: string; payload: unknown[] }>();
+    expect(deserialize(body.payload)).toMatchObject({
+      actionData: { greeted: '패스티파이' },
+      data: { 'root-3': { name: 'greet' } },
+    });
+  });
+
+  it('action: 문서 요청 redirect 는 303, action 없는 라우트는 405', async () => {
+    const app = await createApp();
+    const headers = {
+      'content-type': 'application/x-www-form-urlencoded',
+      origin,
+      host: 'localhost:80',
+    };
+    const redirected = await app.inject({
+      method: 'POST',
+      url: '/greet',
+      headers,
+      payload: 'go=1',
+    });
+    expect(redirected.statusCode).toBe(303);
+    expect(redirected.headers.location).toBe('/hello');
+    const plain = await app.inject({ method: 'POST', url: '/hello', headers, payload: '' });
+    expect(plain.statusCode).toBe(405);
+  });
+
+  it('사용자 라우트의 JSON 파싱은 그대로 둔다', async () => {
+    const app = Fastify();
+    await app.register(ssrKit, { build });
+    app.post('/api/echo', (request) => request.body);
+    const res = await app.inject({ method: 'POST', url: '/api/echo', payload: { a: 1 } });
+    expect(res.json()).toEqual({ a: 1 });
   });
 });

@@ -131,6 +131,7 @@ export const toEdgeSsrRequest = (request: Request): SsrRequest => ({
   method: request.method,
   headers: request.headers,
   raw: request,
+  readBody: () => request.arrayBuffer(),
 });
 
 /** unmatched: 'next' 면 매치가 없을 때 null 을 돌려준다 */
@@ -138,10 +139,6 @@ export const createEdgeHandler =
   (options: EdgeHandlerOptions, unmatched: HandleOptions['unmatched'] = 'render') =>
   (request: Request): Promise<Response | null> =>
     new Promise((resolve, reject) => {
-      if (request.method !== 'GET' && request.method !== 'HEAD') {
-        resolve(unmatched === 'next' ? null : new Response('Method Not Allowed', { status: 405 }));
-        return;
-      }
       handleRequest(
         options.build,
         toEdgeSsrRequest(request),
