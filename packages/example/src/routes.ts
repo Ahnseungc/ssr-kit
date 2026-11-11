@@ -11,6 +11,8 @@ export default defineRoutes([
       { id: 'boom', path: 'boom', module: () => import('./pages/Boom') },
       { id: 'about', path: 'about', module: () => import('./pages/About') },
       { id: 'stream', path: 'stream', module: () => import('./pages/Stream') },
+      { id: 'external', path: 'external', module: () => import('./pages/External') },
+      { id: 'query', path: 'query', module: () => import('./pages/QueryPage') },
       { id: 'shell', path: 'shell', ssr: false, module: () => import('./pages/Shell') },
     ],
   },

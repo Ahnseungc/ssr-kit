@@ -154,6 +154,31 @@ describe('runLoaders', () => {
   });
 });
 
+describe('runLoaders: 데이터 Promise', () => {
+  it('다른 로더를 기다리는 동안 reject 된 데이터 Promise 가 unhandled 로 새지 않는다', async () => {
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      const failLater = () =>
+        new Promise((_, reject) => setTimeout(() => reject(new Error('x')), 5));
+      await runLoaders({
+        ...setup([
+          {
+            default: Page,
+            loader: () => ({ chart: failLater(), nested: new Map([['k', failLater()]]) }),
+          },
+          { default: Page, loader: () => new Promise((r) => setTimeout(() => r('slow'), 40)) },
+        ]),
+        dev: false,
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+});
+
 describe('mergeHead', () => {
   it('title 은 마지막, meta 는 키 기준 깊은 쪽, link 는 중복 제거', () => {
     expect(

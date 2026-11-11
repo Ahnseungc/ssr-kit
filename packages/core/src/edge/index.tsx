@@ -29,14 +29,23 @@ const hasNoBody = (status: number, method: string) =>
 /** React 출력 끝에 settle 스크립트를 붙이는 TransformStream */
 const appendDeferred = (entries: DeferredEntry[], options: TreeRenderOptions) => {
   const timeout = createTimeout(options.renderTimeout);
-  const scripts = entries.map(async ({ id, promise }) => {
-    const outcome = await settleWithin(promise, timeout, options.renderTimeout);
-    if (!outcome.ok) options.report('stream', outcome.value);
-    return settleScript(id, outcome, options.dev, options.nonce);
-  });
+  const scriptOptions = {
+    dev: options.dev,
+    nonce: options.nonce,
+    onError: (error: unknown) => options.report('stream', error),
+  };
+  const scripts = Promise.all(
+    entries.map(async ({ id, promise }) => {
+      const outcome = await settleWithin(promise, timeout, options.renderTimeout);
+      if (!outcome.ok) options.report('stream', outcome.value);
+      return settleScript(id, outcome, scriptOptions);
+    }),
+  );
+  // flush 전에 실패해도 unhandled rejection 이 되지 않게
+  scripts.catch(() => {});
   return new TransformStream<Uint8Array, Uint8Array>({
     async flush(controller) {
-      for (const script of await Promise.all(scripts)) controller.enqueue(encoder.encode(script));
+      for (const script of await scripts) controller.enqueue(encoder.encode(script));
     },
   });
 };
@@ -54,13 +63,14 @@ const renderTree = async (
     return;
   }
 
-  const { bootstrap, entries } = serializeDocumentPayload(options.data);
+  const { bootstrap, entries } = serializeDocumentPayload(options.data, options.dev);
   const abort = new AbortController();
   const timer = setTimeout(
     () => abort.abort(new Error(`renderTimeout(${options.renderTimeout}ms) 초과`)),
     options.renderTimeout,
   );
-  signal.addEventListener('abort', () => abort.abort(), { once: true });
+  if (signal.aborted) abort.abort();
+  else signal.addEventListener('abort', () => abort.abort(), { once: true });
 
   let started = false;
   let stream: Awaited<ReturnType<typeof renderToReadableStream>>;

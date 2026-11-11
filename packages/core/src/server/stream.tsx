@@ -26,7 +26,7 @@ const streamTree = (target: NodeTarget, tree: ReactNode, options: TreeRenderOpti
       return;
     }
 
-    const { bootstrap, entries } = serializeDocumentPayload(options.data);
+    const { bootstrap, entries } = serializeDocumentPayload(options.data, options.dev);
     const writer = new DeferredWriter(target.stream, {
       entries,
       dev: options.dev,
@@ -69,7 +69,9 @@ const streamTree = (target: NodeTarget, tree: ReactNode, options: TreeRenderOpti
     );
     timer.unref?.();
     target.stream.on('close', () => clearTimeout(timer));
-    target.signal.addEventListener('abort', () => stream.abort(), { once: true });
+    // 로더를 도는 사이 이미 끊긴 연결이면 바로 중단
+    if (target.signal.aborted) stream.abort();
+    else target.signal.addEventListener('abort', () => stream.abort(), { once: true });
   });
 
 /** Node Writable 로 응답하는 sink. renderToPipeableStream + flush 경계 데이터 삽입 */

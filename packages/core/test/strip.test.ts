@@ -72,6 +72,34 @@ export default function Page() { return <Chart title="x" />; }
     expect(out).not.toContain('server-title');
   });
 
+  it('로더만 쓰던 클래스·부작용 초기값·구조분해 선언과 그 import 를 지운다', () => {
+    const out = strip(`
+import { Pool } from 'pg';
+import { secrets } from './secrets.server';
+const pool = new Pool({ password: process.env.DB_PASSWORD });
+const { apiKey } = secrets;
+class Repo { find() { return pool.query(apiKey); } }
+export const loader = () => new Repo().find();
+export default () => null;
+`);
+    expect(out).not.toContain('pg');
+    expect(out).not.toContain('DB_PASSWORD');
+    expect(out).not.toContain('secrets');
+    expect(out).not.toContain('Repo');
+  });
+
+  it('원래부터 안 쓰이던 부작용 선언과 다른 곳에서 쓰는 선언은 남긴다', () => {
+    const out = strip(`
+import { register } from './registry';
+const registered = register('page');
+const shared = { label: '공용' };
+export const loader = () => shared;
+export default () => shared.label;
+`);
+    expect(out).toContain(`const registered = register('page');`);
+    expect(out).toContain('const shared');
+  });
+
   it('loader 가 없으면 변환하지 않는다', () => {
     expect(strip(`export const head = () => ({}); export default () => null;`)).toBeNull();
     expect(strip(`const loaderText = 'loader'; export default () => loaderText;`)).toBeNull();

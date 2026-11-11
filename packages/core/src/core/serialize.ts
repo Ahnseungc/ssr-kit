@@ -21,6 +21,23 @@ export class SerializeError extends Error {
   }
 }
 
+/** `__proto__` 같은 키도 프로토타입을 건드리지 않고 자기 속성으로 둔다 */
+const setOwn = (target: Record<string, unknown>, key: string, value: unknown) => {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+};
+
+/** React use() 가 이미 settle 된 것으로 보고 suspend 하지 않게 thenable 상태를 단다 */
+const settledThenable = <T>(promise: Promise<T>, ok: boolean, value: unknown) =>
+  Object.assign(
+    promise,
+    ok ? { status: 'fulfilled', value } : { status: 'rejected', reason: value },
+  );
+
 const isPlainObject = (value: object) => {
   const proto = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
@@ -107,7 +124,7 @@ export const serialize = (root: unknown, options: SerializeOptions = {}): string
     }
 
     const out: Record<string, number> = {};
-    for (const [k, v] of Object.entries(object)) out[k] = add(v, `${path}.${k}`);
+    for (const [k, v] of Object.entries(object)) setOwn(out, k, add(v, `${path}.${k}`));
     return out;
   };
 
@@ -136,10 +153,11 @@ export const toRejection = (value: unknown) => {
 };
 
 const rejected = (reason: unknown) => {
-  const promise = Promise.reject(toRejection(reason));
+  const error = toRejection(reason);
+  const promise = Promise.reject(error);
   // 컴포넌트가 use() 하기 전까지 unhandled rejection 으로 잡히지 않게
   promise.catch(() => {});
-  return promise;
+  return settledThenable(promise, false, error);
 };
 
 export const deserialize = <T = unknown>(
@@ -172,7 +190,7 @@ export const deserialize = <T = unknown>(
 
     const out: Record<string, unknown> = {};
     done.set(index, out);
-    for (const [k, v] of Object.entries(entry as Record<string, number>)) out[k] = read(v);
+    for (const [k, v] of Object.entries(entry as Record<string, number>)) setOwn(out, k, read(v));
     return out;
   };
 
@@ -193,7 +211,10 @@ export const deserialize = <T = unknown>(
       }
       case 'p': {
         const value = read(rest[1] as number);
-        return remember(index, rest[0] === 1 ? Promise.resolve(value) : rejected(value));
+        return remember(
+          index,
+          rest[0] === 1 ? settledThenable(Promise.resolve(value), true, value) : rejected(value),
+        );
       }
       case 'D':
         return remember(index, new Date(rest[0] as string));

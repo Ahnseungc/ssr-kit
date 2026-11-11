@@ -12,6 +12,8 @@ type DataResponse =
 type Mode = 'push' | 'replace' | 'pop' | 'revalidate';
 
 const PREFETCH_TTL_MS = 10_000;
+/** 데이터 응답의 redirect 는 HTTP 200 이라 브라우저 한도가 안 걸린다. 넘으면 문서 이동에 맡긴다 */
+const MAX_REDIRECTS = 10;
 const SCROLL_STORAGE_KEY = 'ssrk:scroll';
 
 const createKey = () => Math.random().toString(36).slice(2, 10);
@@ -121,7 +123,7 @@ export const createClientRouter = ({
     url.pathname === state.location.pathname &&
     url.search === state.location.search;
 
-  const go = async (href: string, mode: Mode, userState?: unknown): Promise<void> => {
+  const go = async (href: string, mode: Mode, userState?: unknown, hops = 0): Promise<void> => {
     const url = new URL(href, window.location.href);
     if (url.origin !== window.location.origin) return window.location.assign(url.href);
 
@@ -146,7 +148,9 @@ export const createClientRouter = ({
     try {
       modules = await loadModules(matches);
       if (needsData(modules)) {
-        response = (await takePrefetched(url)) ?? (await fetchData(url, current.signal));
+        // revalidate 는 최신 데이터가 목적이라 프리패치를 쓰지 않는다
+        const reused = mode === 'revalidate' ? null : await takePrefetched(url);
+        response = reused ?? (await fetchData(url, current.signal));
       }
     } catch {
       // 청크 삭제(배포)·네트워크 오류 → 서버 렌더로 다시 시도
@@ -158,8 +162,11 @@ export const createClientRouter = ({
 
     if (response?.type === 'redirect') {
       const target = new URL(response.to, url);
-      if (target.origin !== window.location.origin) return window.location.assign(target.href);
-      return go(target.href, mode === 'revalidate' ? 'replace' : mode === 'pop' ? 'replace' : mode);
+      if (target.origin !== window.location.origin || hops >= MAX_REDIRECTS) {
+        return window.location.assign(target.href);
+      }
+      const nextMode = mode === 'revalidate' || mode === 'pop' ? 'replace' : mode;
+      return go(target.href, nextMode, userState, hops + 1);
     }
 
     const payload: SsrPayload = response
@@ -212,6 +219,8 @@ export const createClientRouter = ({
       void go(to, options.replace ? 'replace' : 'push', options.state);
     },
     revalidate: () => {
+      // 진행 중인 이동이 있으면 그 이동이 최신 데이터를 가져오므로 끊지 않는다
+      if (controller) return;
       void go(window.location.href, 'revalidate', state.location.state);
     },
     prefetch,
@@ -220,6 +229,10 @@ export const createClientRouter = ({
   window.addEventListener('popstate', () => {
     void go(window.location.href, 'pop', history.state?.usr);
   });
+  // 새로고침·다른 문서로 갔다 돌아올 때도 위치를 복원하도록 문서를 떠날 때 저장
+  window.addEventListener('pagehide', saveScroll);
+  const savedY = scroll[initialState.location.key];
+  if (savedY !== undefined) window.scrollTo(0, savedY);
 
   return {
     subscribe: (listener) => {

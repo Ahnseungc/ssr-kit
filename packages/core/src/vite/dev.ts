@@ -41,7 +41,7 @@ const collectStyles = (entries: (EnvironmentModuleNode | undefined)[]) => {
 const withBase = (base: string, url: string) => `${base.replace(/\/$/, '')}${url}`;
 
 export const createDevServer = async (options: DevServerOptions): Promise<DevServer> => {
-  const { createServer, isRunnableDevEnvironment } = await import('vite');
+  const { createServer, isRunnableDevEnvironment, normalizePath } = await import('vite');
   const vite = await createServer({
     root: options.root,
     configFile: options.configFile,
@@ -59,7 +59,7 @@ export const createDevServer = async (options: DevServerOptions): Promise<DevSer
 
   const resolveAssets = async (files: string[]): Promise<ResolvedAssets> => {
     const graph = env.moduleGraph;
-    const entries = [...files.map((file) => path.resolve(vite.config.root, file))];
+    const entries = files.map((file) => normalizePath(path.resolve(vite.config.root, file)));
     const documentFile = api.documentFile();
     if (documentFile) entries.push(documentFile);
     const styles = collectStyles(entries.map((id) => graph.getModuleById(id)));

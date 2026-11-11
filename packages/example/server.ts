@@ -8,6 +8,9 @@ const isProd = process.env.NODE_ENV === 'production';
 const getContext = () => ({ requestId: randomUUID() });
 
 const app = express();
+app.get('/api/gold-price', (_req, res) => {
+  res.json({ pricePerGram: 153_000, at: new Date().toISOString() });
+});
 
 if (isProd) {
   app.use('/assets', express.static('dist/client/assets', { immutable: true, maxAge: '1y' }));

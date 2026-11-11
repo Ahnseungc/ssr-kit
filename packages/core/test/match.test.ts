@@ -42,6 +42,45 @@ describe('createMatcher', () => {
     expect(ids('/gold/42')).toEqual(['root', 'gold']);
   });
 
+  it('우선순위: 인덱스가 catch-all 보다, 정적이 옵셔널 패턴보다 앞선다', () => {
+    const match = (list: RouteDef[], path: string) => createMatcher(list)(path)?.at(-1)?.id;
+    const indexAndAll: RouteDef[] = [
+      { id: 'all', path: '*', module: mod },
+      { id: 'idx', path: '/', module: mod },
+    ];
+    expect(match(indexAndAll, '/')).toBe('idx');
+    expect(match(indexAndAll, '/x/y')).toBe('all');
+    expect(
+      match(
+        [
+          {
+            module: mod,
+            children: [
+              { id: 'idx', path: '/', module: mod },
+              { id: 'all', path: '*', module: mod },
+            ],
+          },
+        ],
+        '/',
+      ),
+    ).toBe('idx');
+    const docs: RouteDef[] = [
+      { id: 'i18n', path: '/:lang?/docs', module: mod },
+      { id: 'docs', path: '/docs', module: mod },
+    ];
+    expect(match(docs, '/docs')).toBe('docs');
+    expect(match(docs, '/en/docs')).toBe('i18n');
+    expect(
+      match(
+        [
+          { id: 'a', path: ':x', module: mod },
+          { id: 'b', path: ':y', module: mod },
+        ],
+        '/z',
+      ),
+    ).toBe('a');
+  });
+
   it('동적·옵셔널·와일드카드 params 를 채운다', () => {
     const match = createMatcher(routes);
     expect(match('/gold/42')?.at(-1)?.params).toEqual({ id: '42' });

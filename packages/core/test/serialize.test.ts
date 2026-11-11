@@ -68,6 +68,22 @@ describe('serialize', () => {
     expect(() => serialize({ p: Promise.resolve(1) })).toThrow(/Promise/);
   });
 
+  it('자기 속성 __proto__ 키를 보존하고 프로토타입을 바꾸지 않는다', () => {
+    const value = JSON.parse('{"__proto__":{"polluted":true},"a":2}');
+    const out = roundTrip(value) as Record<string, unknown>;
+    expect(Object.keys(out)).toEqual(['__proto__', 'a']);
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect((out as { polluted?: boolean }).polluted).toBeUndefined();
+  });
+
+  it('settle 된 Promise 는 React thenable 상태를 달고 복원된다', () => {
+    const ok = Promise.resolve(1);
+    const json = serialize({ p: ok }, { onPromise: () => ({ ok: true, value: 1 }) });
+    const out = deserialize<{ p: Promise<number> & { status?: string; value?: number } }>(json);
+    expect(out.p.status).toBe('fulfilled');
+    expect(out.p.value).toBe(1);
+  });
+
   it('Object.create(null) 객체는 일반 객체로 취급한다', () => {
     const value = Object.assign(Object.create(null), { a: 1 });
     expect(roundTrip(value)).toEqual({ a: 1 });

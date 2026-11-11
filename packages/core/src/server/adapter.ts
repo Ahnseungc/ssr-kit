@@ -17,8 +17,9 @@ export interface AdapterOptions<Req> {
 }
 
 const DEFAULT_RENDER_TIMEOUT_MS = 10_000;
+// 크롤러 토큰만. 'naver'·'daum' 은 네이버·다음 앱의 인앱 브라우저(실사용자) UA 에도 들어가므로 쓰지 않는다
 const BOT_UA =
-  /bot|crawl|spider|slurp|facebookexternalhit|kakaotalk-scrap|daum|yeti|twitterbot|slackbot|linkedinbot|discordbot|whatsapp|telegrambot|applebot|bingpreview|googlebot|naver/i;
+  /bot[/;)]|crawl|spider|slurp|facebookexternalhit|kakaotalk-scrap|daumoa|yeti|bingpreview|whatsapp|telegrambot|discordbot|slackbot|twitterbot|linkedinbot|applebot|googlebot/i;
 
 /** 어댑터 옵션 → handleRequest 옵션. userAgent 는 기본 봇 판별용 */
 export const toHandleOptions = <Req>(

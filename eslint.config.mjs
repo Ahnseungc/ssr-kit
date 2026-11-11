@@ -11,6 +11,10 @@ export default tseslint.config(
   tseslint.configs.recommended,
   prettier,
   {
+    files: ['**/scripts/**/*.mjs'],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
+  },
+  {
     plugins: { 'simple-import-sort': simpleImportSort },
     rules: {
       '@typescript-eslint/no-empty-object-type': 'off',

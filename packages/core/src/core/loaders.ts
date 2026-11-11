@@ -26,7 +26,19 @@ const silencePromises = (value: unknown, seen = new Set<unknown>()) => {
     value.catch(() => {});
     return;
   }
-  if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype) return;
+  if (value instanceof Map) {
+    for (const [key, child] of value) {
+      silencePromises(key, seen);
+      silencePromises(child, seen);
+    }
+    return;
+  }
+  if (value instanceof Set) {
+    for (const child of value) silencePromises(child, seen);
+    return;
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return;
   for (const child of Object.values(value)) silencePromises(child, seen);
 };
 
@@ -75,10 +87,15 @@ export const runLoaders = async (options: RunLoadersOptions): Promise<LoaderResu
   const { matches, modules, dev } = options;
   const headerList = matches.map(() => new Headers());
   const results = await Promise.allSettled(
-    matches.map((match, i) => runOne(modules[i]!, match, options, headerList[i]!)),
+    // 다른 로더를 기다리는 동안 먼저 reject 된 데이터 Promise 가 unhandled 로 잡히지 않게 즉시 catch
+    matches.map((match, i) =>
+      runOne(modules[i]!, match, options, headerList[i]!).then((value) => {
+        silencePromises(value);
+        return value;
+      }),
+    ),
   );
   const headers = mergeHeaders(headerList);
-  for (const result of results) if (result.status === 'fulfilled') silencePromises(result.value);
 
   const redirectIndex = results.findIndex((r) => r.status === 'rejected' && isRedirect(r.reason));
   if (redirectIndex !== -1) {

@@ -11,7 +11,9 @@
     "e2e": "pnpm --filter ssr-kit-example e2e",
     "clean": "pnpm -r clean",
     "publish:ssr-kit": "pnpm --filter ssr-kit publish --access public",
-    "format": "prettier --write \"packages/*/{src,test,e2e}/**/*.{ts,tsx}\" \"packages/*/*.ts\""
+    "format": "prettier --write \"packages/*/{src,test,e2e}/**/*.{ts,tsx}\" \"packages/*/*.ts\"",
+    "size": "pnpm --filter ssr-kit size",
+    "test:coverage": "pnpm --filter ssr-kit test:coverage"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

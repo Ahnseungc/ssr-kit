@@ -19,7 +19,10 @@ export default function Home() {
           </li>
         ))}
       </ul>
-      <label htmlFor={inputId}>메모</label>
+      <Link to="#memo-section">메모로</Link>
+      <label id="memo-section" htmlFor={inputId}>
+        메모
+      </label>
       <input id={inputId} data-testid="memo" />
       <button type="button" onClick={() => setCount((c) => c + 1)}>
         눌림 {count}

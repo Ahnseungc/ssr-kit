@@ -20,6 +20,8 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   splitting: true,
+  // Deno 등은 `node:` 접두사가 있어야 내장 모듈로 인식한다
+  removeNodeProtocol: false,
   external: [
     'react',
     'react-dom',

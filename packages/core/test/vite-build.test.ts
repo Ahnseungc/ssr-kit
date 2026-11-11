@@ -19,6 +19,7 @@ const readDir = (dir: string) =>
 describe('Vite 빌드 통합 (fsRoutes + ssrKit)', () => {
   afterAll(() => {
     rmSync(path.join(root, 'dist'), { recursive: true, force: true });
+    rmSync(path.join(root, 'out'), { recursive: true, force: true });
     rmSync(path.join(root, 'node_modules'), { recursive: true, force: true });
   });
 
@@ -54,6 +55,34 @@ describe('Vite 빌드 통합 (fsRoutes + ssrKit)', () => {
         readFileSync(path.join(root, 'dist/client/.vite/manifest.json'), 'utf8'),
       ) as Record<string, unknown>;
       expect(Object.keys(manifest)).toContain('src/routes/gold/[id].tsx');
+    },
+    BUILD_TIMEOUT_MS,
+  );
+
+  it(
+    '사용자가 정한 outDir·build.target 을 덮어쓰지 않는다',
+    async () => {
+      const builder = await createBuilder({
+        root,
+        configFile: false,
+        logLevel: 'silent',
+        resolve: {
+          alias: [
+            { find: /^ssr-kit\/client$/, replacement: path.join(src, 'client/index.tsx') },
+            { find: /^ssr-kit$/, replacement: path.join(src, 'index.ts') },
+          ],
+        },
+        environments: {
+          client: { build: { outDir: 'out/web', target: 'es2017' } },
+          ssr: { build: { outDir: 'out/node' } },
+        },
+        plugins: [fsRoutes({ dir: 'src/routes' }), ssrKit({ routes: DEFAULT_FS_ROUTES_FILE })],
+      });
+      await builder.buildApp();
+      const client = readDir(path.join(root, 'out/web/assets'));
+      expect(client).not.toMatch(/\?\.|\?\?/);
+      const server = readFileSync(path.join(root, 'out/node/entry.js'), 'utf8');
+      expect(server).toContain('"src/routes/gold/[id].tsx"');
     },
     BUILD_TIMEOUT_MS,
   );

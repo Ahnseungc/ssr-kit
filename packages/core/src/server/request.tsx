@@ -138,8 +138,11 @@ const rootErrorInput = (
   error: unknown,
 ): DocumentInput => {
   const routeError = toRouteError(error, build.dev);
+  const headers = new Headers(input.headers);
+  noStoreOnError(routeError.status, headers);
   return {
     ...input,
+    headers,
     status: routeError.status,
     state: {
       ...input.state,
@@ -224,9 +227,22 @@ const handleData = async (
     jsonResponse(sink, 200, result.headers, body);
     return 'handled';
   }
-  const payload = await serializeSettledPayload(result.payload, build.dev);
+  const payload = await serializeSettledPayload(result.payload, {
+    dev: build.dev,
+    timeoutMs: options.renderTimeout,
+    signal: sink.signal,
+    onError: (error) => report(build, options, pageRequest, 'data', error),
+  });
+  noStoreOnError(result.payload.status, result.headers);
   jsonResponse(sink, result.payload.status, result.headers, `{"type":"data","payload":${payload}}`);
   return 'handled';
+};
+
+const ERROR_STATUS = 400;
+
+/** 에러 응답이 로더가 정한 public 캐시를 물려받지 않게 */
+const noStoreOnError = (status: number, headers: Headers) => {
+  if (status >= ERROR_STATUS) headers.set('cache-control', 'no-store');
 };
 
 const isDataRequest = (build: ServerBuild, pathname: string) =>
@@ -291,6 +307,7 @@ export const handleRequest = async (
     return 'handled';
   }
 
+  noStoreOnError(result.payload.status, result.headers);
   await renderDocument(build, request, sink, options, {
     state: initialState(request, matches, modules, result.payload, build.dev),
     status: result.payload.status,

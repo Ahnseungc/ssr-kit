@@ -1,7 +1,7 @@
 # ssr-kit 기술 스펙
 
 - 작성: 안승찬 · 2026-11-11
-- 상태: v0.4 (M1 + P1 + edge·오버레이·prerender 데이터 반영, 2026-11-11)
+- 상태: v0.5 (재검증·코드 리뷰 반영, 2026-11-11)
 - 근거: [ssr-kit-prd.md](../../prd/ssr-kit-prd.md) v0.1 — 요구사항 ID(R1, RT1, D1 …)는 PRD 표기를 그대로 쓴다.
 - 범위: M1(MVP, P0) 구현에 필요한 결정 전부 + P1 은 인터페이스만 고정.
 - 기준 버전: React 19.3 · Vite 8.3 · @vitejs/plugin-react 6.3 · Node 22+
@@ -327,7 +327,10 @@ export function render(
 
 ### 4.2 우선순위
 
-후보 브랜치별 세그먼트 점수 합이 큰 쪽: 정적 10 > 동적 3 > 옵셔널 2 > `*` 1. 동점이면 정의 순서. `defineRoutes` 결과를 처음 매칭할 때 한 번 펼쳐 정렬한 테이블을 캐시한다.
+매치되는 브랜치들을 **URL 세그먼트 앞에서부터** 비교한다. 각 세그먼트를 소비한 패턴이 정적 > 동적 > 옵셔널 > `*` 순으로 구체적이다. 모두 같으면 비운 옵셔널·빈 `*` 가 적은 쪽, 그래도 같으면 정의 순서.
+
+- 예: `/` 는 `*` 보다 인덱스 라우트, `/docs` 는 `/:lang?/docs` 보다 `/docs`.
+- v0.3 까지의 점수 합산 방식은 `*`(1점)가 인덱스(0점)를 이기는 결함이 있어 바꿨다.
 
 ### 4.3 타입 추론
 
@@ -385,6 +388,7 @@ export const loader = async () => ({ gold: await getGold(), chart: getChart() /*
 - **상태:** 에러가 없으면 200. 에러면 §5.5.
 - **헤더:** 루트→리프 순서로 각 로더 `headers` 를 덮어쓴다. **같은 헤더는 더 깊은 라우트가 이긴다.** `Set-Cookie` 는 전부 append.
 - 아무도 `Cache-Control` 을 설정하지 않으면 `private, no-store` 를 붙인다(개인화 HTML 이 CDN 에 캐시되는 실수를 막는 쪽이 기본).
+- 상태가 400 이상이면(로더 에러·렌더 실패 대체 문서·데이터 엔드포인트 에러) 로더가 정한 값과 상관없이 `Cache-Control: no-store`.
 - `Content-Type: text/html; charset=utf-8`. 그 외 캐시 헤더는 추가하지 않는다.
 
 ### 5.5 에러 처리 (E1, E2)
@@ -415,6 +419,7 @@ type DataResponse =
   | { type: 'redirect'; to: string; status: number };
 ```
 
+- Promise 대기에도 문서와 같은 `renderTimeout` 과 연결 종료(abort)를 적용한다. 시간 안에 안 끝나거나 직렬화할 수 없는 값은 reject 로 보내고 `onError(phase: 'data')` 로 보고한다.
 - **매치된 모든 로더를 실행한다.** 상위 로더 생략(v0.1 의 `X-SSRK-Routes`)은 인증 우회 위험(V2)으로 v1 에서 제외.
 - 로더 에러도 `type: 'data'` 의 `payload.error` 로 보낸다(문서 응답과 같은 상태 코드).
 - redirect 는 HTTP 200 + `type: 'redirect'` (fetch 가 자동으로 따라가 문서 HTML 을 받는 걸 막기 위함).
@@ -496,7 +501,7 @@ export const build = { routes, Document, manifest: /* §6.4 */, dataPrefix: '/_d
 client 환경 `transform`(일반 순서 — Vite 내장 TS 변환 이후라 타입 참조가 없다)에서 라우트 모듈에 대해:
 
 1. `oxc-parser` 로 파싱해 `export const loader` / `export function loader` / `export { loader }` 를 제거한다.
-2. export 되지 않고 참조도 없는 최상위 함수 선언·함수 값 변수 선언을 반복 제거한다(고정점까지). 로더 전용 헬퍼가 서버 import 를 붙잡아 두는 걸 막기 위함.
+2. export 되지 않은 최상위 선언(함수·클래스·변수, 구조분해·부작용 있는 초기값 포함) 중 **원래는 참조되다가 로더를 지운 뒤 참조가 사라진 것**을 반복 제거한다(고정점까지). 로더 전용 헬퍼·DB 풀·비밀값이 서버 import 를 붙잡아 두는 걸 막기 위함. 처음부터 안 쓰이던 선언(의도된 부작용)은 남긴다.
 3. 참조가 사라진 import 바인딩 제거. 바인딩이 모두 사라진 import 문은 통째로 제거(사이드이펙트 import `import 'x'` 는 유지).
 4. `magic-string` 으로 소스맵 유지.
 
@@ -606,7 +611,10 @@ navigate(to)
 7  startTransition(() => setState(...)) — 이전 화면을 유지하다 교체
 8  스크롤: 해시 있으면 해당 요소, 아니면 top. popstate 면 저장 위치 복원. state='idle'
 ```
-- `history.scrollRestoration = 'manual'`, 위치는 `sessionStorage` 에 history key 별로 저장.
+- `history.scrollRestoration = 'manual'`, 위치는 `sessionStorage` 에 history key 별로 저장. `pagehide` 때도 저장하고 hydrate 때 복원해 새로고침·문서 간 뒤로가기에서도 위치가 남는다.
+- 데이터 응답의 redirect 는 HTTP 200 이라 브라우저 한도가 없으므로 10번까지만 따라가고, 넘으면 `location.assign` 으로 브라우저에 맡긴다.
+- `revalidate()` 는 프리패치 데이터를 쓰지 않고, 진행 중인 이동이 있으면 아무것도 하지 않는다(그 이동이 최신 데이터를 가져온다).
+- 데이터 응답으로 복원한 settle 된 Promise 에는 React thenable 상태(`status`·`value`)를 달아 `use()` 가 다시 suspend 하지 않게 한다(이동 시 Suspense fallback 깜빡임 방지).
 - 데이터 요청 네트워크 에러 → `location.assign(to)`.
 - 데이터 캐시 없음(G2). `intent` 프리패치 결과는 직후 1회 네비게이션에 한해 재사용(10초 이내).
 - 프리패치 항목은 모듈 로드를 기다리지 않고 즉시 등록한다. 클릭은 mousedown 의 focus 프리패치 직후에 오므로, 늦게 등록하면 같은 데이터를 두 번 요청한다.
@@ -707,6 +715,6 @@ export interface RenderSink {
 
 ## 14. 아직 남은 결정 (M1 중 확정)
 
-1. 기본 `isBot` 정규식 범위.
+1. ~~기본 `isBot` 정규식 범위~~ → 크롤러 토큰만(`xxxbot/`, `Yeti`, `Daumoa`, `kakaotalk-scrap` 등). `naver`·`daum` 은 인앱 브라우저 실사용자 UA 에도 있어 쓰지 않는다.
 2. 루트 404 커스텀 — `path: '*'` 라우트로 충분한지.
 3. `useNavigation` mutation 확장 — v1 비목표라 보류.

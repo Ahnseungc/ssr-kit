@@ -17,4 +17,9 @@ export const listGolds = async () => {
   return golds;
 };
 
+export const currentGoldPrice = async () => ({
+  pricePerGram: 152_000,
+  at: '2026-11-11T09:00:00.000Z',
+});
+
 export const findGold = async (id: string) => golds.find((gold) => gold.id === id) ?? null;

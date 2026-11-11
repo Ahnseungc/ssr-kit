@@ -91,6 +91,13 @@ describe('Promise 스트리밍 (R2)', () => {
     expect(html).not.toContain('차트 서버 다운');
   });
 
+  it('셸보다 먼저 settle 된 데이터(봇 모드)도 문서 앞에 끼지 않는다', async () => {
+    const { html } = await run('/', { isBot: true });
+    expect(html.startsWith('<!DOCTYPE html>')).toBe(true);
+    expect(html).toContain('<p id="chart">1,2,3</p>');
+    expect(html).toMatch(/__SSRKR\(0,1,/);
+  });
+
   it('settle 스크립트는 React 청크 경계에만 끼운다', async () => {
     const { chunks } = await run('/');
     for (const chunk of chunks.filter((c) => c.includes('__SSRKR('))) {

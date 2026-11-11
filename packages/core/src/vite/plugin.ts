@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import type { Manifest, Plugin, ResolvedConfig, Rollup } from 'vite';
+import { type Manifest, normalizePath, type Plugin, type ResolvedConfig, type Rollup } from 'vite';
 
 import type { AssetManifest } from '../server/build';
 import { annotateRoutesFile, type RoutesFileInfo, scanRoutesFile } from './routes';
@@ -12,6 +12,8 @@ export const SERVER_ENTRY = 'virtual:ssr-kit/server-entry';
 export const PLUGIN_NAME = 'ssr-kit';
 
 const DEFAULT_DATA_PREFIX = '/_data';
+const DEFAULT_CLIENT_OUT_DIR = 'dist/client';
+const DEFAULT_SERVER_OUT_DIR = 'dist/server';
 const REACT_PREAMBLE_PLUGIN = 'vite:react-virtual-preamble';
 const SERVER_ONLY_FILE = /\.server\.[cm]?[jt]sx?$/;
 const CLIENT_DEPS = [
@@ -48,7 +50,8 @@ interface Discovery {
 
 type Resolve = Rollup.PluginContext['resolve'];
 
-const cleanId = (id: string) => id.replace(/[?#].*$/, '');
+/** Vite 모듈 id 형식(/ 구분)으로. Windows 의 path.resolve 결과(\\)와 비교할 때 필요 */
+const cleanId = (id: string) => normalizePath(id.replace(/[?#].*$/, ''));
 
 /** 라우트 모듈의 비컴포넌트 export. React Refresh 경계 검사에서 뺀다 */
 const ROUTE_NON_COMPONENT_EXPORTS = ['loader', 'head', '__ssrkLoader'];
@@ -111,7 +114,7 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
   let hasReactPreamble = false;
   let discovery: Promise<Discovery> | null = null;
 
-  const toKey = (file: string) => path.relative(config.root, file).split(path.sep).join('/');
+  const toKey = (file: string) => path.posix.relative(normalizePath(config.root), cleanId(file));
 
   const discover = (resolve: Resolve): Promise<Discovery> => {
     discovery ??= (async () => {
@@ -182,9 +185,9 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
   };
 
   const isServerOnly = (file: string) => {
-    const rel = path.relative(config.root, file);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
-    const segments = rel.split(path.sep);
+    const rel = toKey(file);
+    if (rel.startsWith('..') || path.posix.isAbsolute(rel)) return false;
+    const segments = rel.split('/');
     if (segments.includes('node_modules')) return false;
     return SERVER_ONLY_FILE.test(rel) || segments.slice(0, -1).includes('server');
   };
@@ -199,13 +202,14 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
     name: PLUGIN_NAME,
     api,
 
-    config: () => ({
+    // 반환값은 사용자 설정 위에 병합되므로, 사용자가 정한 outDir 은 그대로 둔다
+    config: (user) => ({
       appType: 'custom',
       ssr: { external: ['ssr-kit'] },
       environments: {
         client: {
           build: {
-            outDir: 'dist/client',
+            outDir: user.environments?.client?.build?.outDir ?? DEFAULT_CLIENT_OUT_DIR,
             manifest: true,
             rolldownOptions: { input: CLIENT_ENTRY },
           },
@@ -214,7 +218,7 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
         },
         ssr: {
           build: {
-            outDir: 'dist/server',
+            outDir: user.environments?.ssr?.build?.outDir ?? DEFAULT_SERVER_OUT_DIR,
             rolldownOptions: {
               input: { entry: SERVER_ENTRY },
               output: { entryFileNames: '[name].js' },
@@ -232,8 +236,10 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
 
     configResolved(resolved) {
       config = resolved;
-      routesFile = path.resolve(resolved.root, options.routes);
-      documentFile = options.document ? path.resolve(resolved.root, options.document) : undefined;
+      routesFile = normalizePath(path.resolve(resolved.root, options.routes));
+      documentFile = options.document
+        ? normalizePath(path.resolve(resolved.root, options.document))
+        : undefined;
       hasReactPreamble = resolved.plugins.some((p) => p.name === REACT_PREAMBLE_PLUGIN);
     },
 
@@ -279,7 +285,7 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
     },
 
     hotUpdate({ file }) {
-      if (file === routesFile) discovery = null;
+      if (cleanId(file) === routesFile) discovery = null;
     },
   };
 };

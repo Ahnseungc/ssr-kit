@@ -14,27 +14,41 @@ interface Candidate {
 
 const inRanges = (pos: number, ranges: Range[]) => ranges.some(([s, e]) => pos >= s && pos < e);
 
-const isFunctionValue = (node: AstNode | null | undefined) =>
-  node?.type === 'ArrowFunctionExpression' || node?.type === 'FunctionExpression';
+/** 선언 패턴(구조분해 포함)이 만드는 바인딩 이름 */
+const bindingNames = (node: AstNode | null | undefined): string[] => {
+  if (!node) return [];
+  switch (node.type) {
+    case 'Identifier':
+      return [nameOf(node)!];
+    case 'ObjectPattern':
+      return (node.properties as AstNode[]).flatMap((p) =>
+        bindingNames((p.type === 'RestElement' ? p.argument : p.value) as AstNode),
+      );
+    case 'ArrayPattern':
+      return (node.elements as (AstNode | null)[]).flatMap((e) => bindingNames(e));
+    case 'RestElement':
+      return bindingNames(node.argument as AstNode);
+    case 'AssignmentPattern':
+      return bindingNames(node.left as AstNode);
+    default:
+      return [];
+  }
+};
 
-/** export 안 된 최상위 함수 선언·함수 값 변수 선언 (로더 전용 헬퍼 후보) */
+/**
+ * export 안 된 최상위 선언 (함수·클래스·변수, 부작용 있는 초기값 포함).
+ * 로더를 지운 뒤 참조가 사라진 것만 지우므로(removeDeadHelpers), 원래 안 쓰이던 부작용 코드는 남는다.
+ */
 const findCandidates = (body: AstNode[]): Candidate[] => {
   const list: Candidate[] = [];
   for (const stmt of body) {
-    if (stmt.type === 'FunctionDeclaration' && stmt.id) {
-      list.push({ names: [nameOf(stmt.id as AstNode)!], range: [stmt.start, stmt.end] });
+    const range: Range = [stmt.start, stmt.end];
+    if ((stmt.type === 'FunctionDeclaration' || stmt.type === 'ClassDeclaration') && stmt.id) {
+      list.push({ names: [nameOf(stmt.id as AstNode)!], range });
     }
     if (stmt.type === 'VariableDeclaration') {
-      const declarations = stmt.declarations as AstNode[];
-      const allFunctions = declarations.every(
-        (d) => (d.id as AstNode).type === 'Identifier' && isFunctionValue(d.init as AstNode),
-      );
-      if (allFunctions) {
-        list.push({
-          names: declarations.map((d) => nameOf(d.id as AstNode)!),
-          range: [stmt.start, stmt.end],
-        });
-      }
+      const names = (stmt.declarations as AstNode[]).flatMap((d) => bindingNames(d.id as AstNode));
+      if (names.length) list.push({ names, range });
     }
   }
   return list;
@@ -108,7 +122,8 @@ const removeDeadHelpers = (
   s: MagicString,
   removed: Range[],
 ) => {
-  const candidates = findCandidates(body);
+  // 로더를 지우기 전부터 안 쓰이던 선언은 사용자 의도(부작용 등)일 수 있어 건드리지 않는다
+  const candidates = findCandidates(body).filter((c) => isReferenced(c.names, refs, [], c.range));
   const dead = new Set<Candidate>();
   let changed = true;
   while (changed) {

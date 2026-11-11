@@ -196,3 +196,119 @@ test('prerender CLI 가 정적 HTML 을 만든다', () => {
   expect(html).toContain('순금 24K');
   expect(readFileSync(path.join(root, 'dist/prerendered/index.html'), 'utf8')).toContain('금 시세');
 });
+
+test('useRevalidate: 문서를 다시 받지 않고 로더만 다시 실행한다', async ({ page }) => {
+  await page.goto('/about');
+  await hydrated(page);
+  await markDocument(page);
+  const before = await page.getByTestId('rendered-ms').textContent();
+  const dataRequest = page.waitForRequest((r) => r.url().includes('/_data/about'));
+  await page.getByRole('button', { name: '새로고침' }).click();
+  await dataRequest;
+  await expect(page.getByTestId('rendered-ms')).not.toHaveText(before!);
+  expect(await isSameDocument(page)).toBe(true);
+  await expect(page).toHaveURL('/about');
+});
+
+test('useNavigation: 느린 이동 중 로딩 상태를 보여 준다', async ({ page }) => {
+  await page.goto('/');
+  await hydrated(page);
+  await page.getByRole('link', { name: '스트리밍' }).click();
+  await expect(page.getByText('불러오는 중…')).toBeVisible();
+  await expect(page.getByRole('heading', { name: '실시간 시세' })).toBeVisible();
+  await expect(page.getByText('불러오는 중…')).toBeHidden();
+});
+
+test('해시 링크는 데이터 요청 없이 URL 해시만 바꾼다', async ({ page }) => {
+  await page.goto('/');
+  await hydrated(page);
+  const dataRequests: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/_data/')) dataRequests.push(r.url());
+  });
+  await markDocument(page);
+  await page.getByRole('link', { name: '메모로' }).click();
+  await expect(page).toHaveURL('/#memo-section');
+  expect(dataRequests).toEqual([]);
+  expect(await isSameDocument(page)).toBe(true);
+});
+
+test('수정 키(Ctrl/Meta) 클릭은 가로채지 않는다', async ({ page, context }) => {
+  await page.goto('/');
+  await hydrated(page);
+  const popup = context.waitForEvent('page');
+  await page
+    .getByRole('navigation')
+    .getByRole('link', { name: '소개' })
+    .click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
+  const opened = await popup;
+  await opened.waitForLoadState();
+  expect(new URL(opened.url()).pathname).toBe('/about');
+  await expect(page).toHaveURL('/');
+});
+
+test('다른 origin 으로의 redirect 는 클라 이동에서도 문서 이동으로 따라간다', async ({ page }) => {
+  await page.route('https://example.com/**', (route) =>
+    route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<h1>외부 사이트</h1>' }),
+  );
+  await page.goto('/');
+  await hydrated(page);
+  await page.getByRole('link', { name: '외부' }).click();
+  await expect(page).toHaveURL('https://example.com/ssr-kit');
+  await expect(page.getByRole('heading', { name: '외부 사이트' })).toBeVisible();
+});
+
+test('TanStack Query 레시피: SSR 데이터로 hydrate 하고 첫 로드에 다시 요청하지 않는다', async ({
+  page,
+  request,
+}) => {
+  const html = await (await request.get('/query')).text();
+  expect(html).toContain('152,000원');
+
+  const apiCalls: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/api/gold-price')) apiCalls.push(r.url());
+  });
+  const errors = collectErrors(page);
+  await page.goto('/query');
+  await hydrated(page);
+  await expect(page.getByTestId('query-price')).toHaveText('152,000원');
+  await page.waitForTimeout(300);
+  expect(apiCalls).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('viewport 프리패치: 화면에 보이는 링크의 라우트 모듈만 받고 데이터는 받지 않는다', async ({
+  page,
+}) => {
+  const requests: string[] = [];
+  page.on('request', (r) => requests.push(new URL(r.url()).pathname));
+  await page.goto('/about');
+  await hydrated(page);
+  // nav 의 18K 링크(prefetch="viewport") → GoldDetail 청크
+  await expect.poll(() => requests.some((p) => /\/assets\/GoldDetail-.*\.js$/.test(p))).toBe(true);
+  expect(requests.filter((p) => p.startsWith('/_data/gold'))).toEqual([]);
+});
+
+test('TanStack Query 레시피: 클라 이동으로 들어와도 서버 데이터로 그린다', async ({ page }) => {
+  const apiCalls: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().includes('/api/gold-price')) apiCalls.push(r.url());
+  });
+  await page.goto('/');
+  await hydrated(page);
+  await page.getByRole('link', { name: '쿼리' }).click();
+  await expect(page.getByTestId('query-price')).toHaveText('152,000원');
+  expect(apiCalls).toEqual([]);
+});
+
+test('새로고침해도 스크롤 위치를 복원한다', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 300 });
+  await page.goto('/about?tall');
+  await hydrated(page);
+  await page.evaluate(() => window.scrollTo(0, 500));
+  await page.reload();
+  await hydrated(page);
+  // 새로고침 순간 브라우저가 몇 px 조정한 값이 저장될 수 있어 근사로 본다
+  await expect.poll(() => page.evaluate(() => Math.abs(window.scrollY - 500) <= 10)).toBe(true);
+});
