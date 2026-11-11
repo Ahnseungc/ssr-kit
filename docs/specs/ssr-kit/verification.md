@@ -20,6 +20,7 @@
 | RT4 | `<Link>`·`useNavigate`·프리패치 | 구현 | E2E (이동·intent·viewport·해시·수정 키·뒤로가기 스크롤) |
 | RT5 | 파일 기반 라우팅 | 구현 | 단위 `fs-routes`, `vite-build` (실제 Vite 빌드) |
 | RT6 | 저수준 `render()` | 구현 | 단위 `render` |
+| RT7 | 타입 안전 링크 (`Href`, `href()`, routes d.ts 생성) | 구현 | 단위 `href`·`typed-routes`, 예제 typecheck (`typed-links.test-d.ts` 의 오타 경로 컴파일 에러) |
 | D1 | 서버 전용 `loader`, 클라 번들에서 제거 | 구현 | 단위 `strip`·`vite-build`, E2E (클라 번들에 서버 비밀 문자열 없음) |
 | D2 | 중첩 로더 병렬 실행 | 구현 | 단위 `loaders` |
 | D3 | 직렬화 (Date·Map·Set·BigInt, XSS 이스케이프) | 구현 | 단위 `serialize` |
@@ -51,8 +52,8 @@
 
 | 항목 | 목표 | 측정 | 결과 |
 |---|---|---|---|
-| 클라 런타임 크기 | < 8KB (min+gzip) | `pnpm size` (CI) | 5.17KB |
-| 서버 런타임 크기 | < 30KB (min) | `pnpm size` (CI) | 18.68KB |
+| 클라 런타임 크기 | < 8KB (min+gzip) | `pnpm size` (CI) | 5.71KB |
+| 서버 런타임 크기 | < 30KB (min) | `pnpm size` (CI) | 23.99KB |
 | 커버리지 | core·server 라인 90% | `pnpm test:coverage` (CI 임계값) | 통과. 클라 라우터·컴포넌트는 E2E 로 검증 |
 | 호환 | Node 22+, React 19, Vite 8 | CI(Node 22), 로컬(Node 26) | 통과 |
 | 보안 | 직렬화 XSS·로더 유출 0 | 단위 `serialize`·`strip`, E2E 번들 검사 | 통과 |
@@ -82,6 +83,9 @@
 | 16 | 이미 끊긴 연결의 signal 에 리스너만 담 | 렌더가 `renderTimeout` 까지 헛돎 | `aborted` 먼저 확인 |
 | 17 | 직렬화가 자기 속성 `__proto__` 키를 잃음 | 데이터 손실 | `defineProperty` 로 대입. 단위 `serialize` |
 | 18 | 스펙 §7 dev 100KB 경고 미구현 | — | 구현 |
+| 19 | 병렬 브랜치 통합: action 이 미들웨어 밖에서 실행될 수 있는 구조 | 인증 미들웨어를 action 이 우회 | 미들웨어 파이프라인 안쪽에서 action → 로더. 단위 `middleware-action` |
+| 20 | dev 첫 로드: 라우트 모듈이 쓰는 라이브러리(예: TanStack Query)를 Vite 가 늦게 발견 | 재최적화 중 React 두 벌 → 에러 후 강제 새로고침 | routes·Document 를 `optimizeDeps.entries` 로. 수동(캐시 비운 dev) |
+| 21 | 같은 문서 해시 링크에 focus 시 데이터 프리패치 | 불필요한 `/_data` 요청 (E2E 15회 중 1회 실패) | 해시 이동은 프리패치 안 함. 단위 `client-router` |
 
 ## 4. 알려진 한계
 

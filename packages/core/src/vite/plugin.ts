@@ -59,6 +59,9 @@ interface Discovery {
 
 type Resolve = Rollup.PluginContext['resolve'];
 
+const toArray = (value: string | string[] | undefined) =>
+  value === undefined ? [] : Array.isArray(value) ? value : [value];
+
 /** Vite 모듈 id 형식(/ 구분)으로. Windows 의 path.resolve 결과(\\)와 비교할 때 필요 */
 const cleanId = (id: string) => normalizePath(id.replace(/[?#].*$/, ''));
 
@@ -261,8 +264,18 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
             manifest: true,
             rolldownOptions: { input: CLIENT_ENTRY },
           },
-          // 가상 엔트리는 의존성 스캔에 안 잡혀 dev 첫 로드에 재최적화 → React 두 벌. 미리 포함한다
-          optimizeDeps: { include: CLIENT_DEPS },
+          // 가상 엔트리는 의존성 스캔에 안 잡혀, 라우트 모듈이 쓰는 라이브러리를 dev 첫 로드에 늦게 발견한다
+          // → 재최적화 중 React 가 두 벌 섞인다. routes·Document 를 스캔 시작점으로 넘기고 React 는 미리 포함한다
+          optimizeDeps: {
+            include: CLIENT_DEPS,
+            entries: [
+              ...toArray(
+                user.environments?.client?.optimizeDeps?.entries ?? user.optimizeDeps?.entries,
+              ),
+              options.routes,
+              ...(options.document ? [options.document] : []),
+            ],
+          },
         },
         ssr: {
           build: {
