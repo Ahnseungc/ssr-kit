@@ -83,8 +83,18 @@ describe('prerender', () => {
     const results = await prerender({ build, paths: ['/', '/posts/a-b'], outDir });
 
     expect(results).toEqual([
-      { path: '/', status: 200, file: path.join(outDir, 'index.html') },
-      { path: '/posts/a-b', status: 200, file: path.join(outDir, 'posts/a-b/index.html') },
+      {
+        path: '/',
+        status: 200,
+        file: path.join(outDir, 'index.html'),
+        dataFile: path.join(outDir, '_data/index.json'),
+      },
+      {
+        path: '/posts/a-b',
+        status: 200,
+        file: path.join(outDir, 'posts/a-b/index.html'),
+        dataFile: path.join(outDir, '_data/posts/a-b/index.json'),
+      },
     ]);
     const home = read(path.join(outDir, 'index.html'));
     expect(home).toMatch(/^<!DOCTYPE html>/i);
@@ -93,6 +103,15 @@ describe('prerender', () => {
     expect(home).toContain('hello-home');
     expect(home).toContain('/assets/entry.js');
     expect(read(path.join(outDir, 'posts/a-b/index.html'))).toContain('post:a-b');
+    const data = JSON.parse(read(path.join(outDir, '_data/posts/a-b/index.json')));
+    expect(data.type).toBe('data');
+    expect(JSON.stringify(data.payload)).toContain('"a-b"');
+  });
+
+  it('data: false 면 데이터 JSON 을 쓰지 않는다', async () => {
+    const [result] = await prerender({ build, paths: ['/'], outDir, data: false });
+    expect(result!.dataFile).toBeUndefined();
+    expect(fs.readdirSync(outDir)).toEqual(['index.html']);
   });
 
   it('Suspense 안의 use(promise) 가 모두 풀린 HTML 을 쓴다', async () => {
@@ -108,7 +127,10 @@ describe('prerender', () => {
     expect(result!.status).toBeGreaterThanOrEqual(300);
     expect(result!.status).toBeLessThan(400);
     expect(result!.file).toBeUndefined();
-    expect(fs.readdirSync(outDir)).toEqual([]);
+    // 클라 이동이 따라갈 수 있도록 redirect 데이터 응답은 쓴다
+    const data = JSON.parse(read(result!.dataFile!));
+    expect(data).toMatchObject({ type: 'redirect', to: '/' });
+    expect(fs.readdirSync(outDir)).toEqual(['_data']);
   });
 
   it('notFound·매치 없음은 404 로 기록하고 파일을 쓰지 않는다', async () => {

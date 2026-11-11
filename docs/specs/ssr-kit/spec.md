@@ -1,7 +1,7 @@
 # ssr-kit 기술 스펙
 
 - 작성: 안승찬 · 2026-11-11
-- 상태: v0.3 (M1 + P1 구현 반영, 2026-11-11)
+- 상태: v0.4 (M1 + P1 + edge·오버레이·prerender 데이터 반영, 2026-11-11)
 - 근거: [ssr-kit-prd.md](../../prd/ssr-kit-prd.md) v0.1 — 요구사항 ID(R1, RT1, D1 …)는 PRD 표기를 그대로 쓴다.
 - 범위: M1(MVP, P0) 구현에 필요한 결정 전부 + P1 은 인터페이스만 고정.
 - 기준 버전: React 19.3 · Vite 8.3 · @vitejs/plugin-react 6.3 · Node 22+
@@ -531,9 +531,8 @@ export function createDevServer(opts: { root: string; configFile?: string }): Pr
 - `getBuild` 는 `server.environments.ssr`(`isRunnableDevEnvironment` 확인) 의 `runner.import('virtual:ssr-kit/server-entry')`. 모듈 그래프 무효화는 러너가 처리.
 - dev 에서 `bootstrapModules` 는 `['/@vite/client', '/@id/__x00__virtual:ssr-kit/client-entry']`. React Refresh preamble 은 client-entry 의 첫 import(`@vitejs/plugin-react/preamble`)로 해결해 HTML 주입이 필요 없다.
 - dev 에셋: 매치된 라우트 모듈의 ssr 모듈 그래프에서 CSS 모듈을 찾아 `preinit(url + '?direct', { as: 'style' })` — 첫 화면 FOUC 방지.
-- 에러: `server.ssrFixStacktrace(err)` 후 콘솔 출력.
+- 에러: Vite 8 모듈 러너가 스택을 소스맵 기준으로 이미 고쳐 주므로 `ssrFixStacktrace` 를 부르지 않는다(중복 호출 시 Vite 가 메시지에 경고를 덧붙인다). 5xx 로더·렌더 에러는 클라 `hydrate`·이동 시 `customElements.get('vite-error-overlay')` 로 Vite 에러 오버레이를 띄운다(dev 에서만, 4xx 는 제외).
 - **Fast Refresh (V5):** 라우트 모듈은 `loader`·`head`·`__ssrkLoader` 같은 비컴포넌트 export 때문에 React Refresh 경계가 되지 못한다. 플러그인이 dev client 라우트 모듈 끝에 코드를 붙여 plugin-react 런타임의 `window.__getReactRefreshIgnoredExports` 로 이 export 들을 경계 검사에서 빼고, `import.meta.hot.accept` 에서 `revalidate()` 를 불러 서버 로더 변경도 반영한다. 컴포넌트 상태는 보존된다. `head` 변경은 다음 이동 때 반영된다.
-- Vite 오버레이 연결은 미구현.
 
 ### 6.7 파일 기반 라우팅 (RT5)
 
@@ -552,7 +551,10 @@ export function createDevServer(opts: { root: string; configFile?: string }): Pr
 
 ### 6.8 prerender (B6)
 
-`ssr-kit/prerender` 의 `prerender({ build, paths, outDir })` 또는 CLI `ssr-kit-prerender --entry dist/server/entry.js --out <dir> /a /b`. 경로마다 `handleRequest` 를 봇 모드(Suspense 완료 대기)로 돌려 200 이면 `<outDir>/<path>/index.html` 을 쓴다. redirect·404 는 결과에만 남기고 파일을 쓰지 않는다. 데이터 엔드포인트 JSON 은 만들지 않는다.
+`ssr-kit/prerender` 의 `prerender({ build, paths, outDir, data? })` 또는 CLI `ssr-kit-prerender --entry dist/server/entry.js --out <dir> /a /b`. 경로마다 `handleRequest` 를 봇 모드(Suspense 완료 대기)로 돌려 200 이면 `<outDir>/<path>/index.html` 을 쓴다. 404 는 결과에만 남긴다.
+
+- 클라 이동용 데이터도 `<outDir><dataPrefix>/<path>/index.json` 으로 쓴다(`data: false` 로 끔). redirect 경로는 HTML 은 안 쓰지만 데이터 응답(`type: 'redirect'`)은 써서 클라 이동이 따라갈 수 있다.
+- 정적 호스팅에서는 `<dataPrefix>/:path` → `<dataPrefix>/:path/index.json` rewrite 가 필요하다(Netlify `_redirects`, Cloudflare Pages, Vercel `rewrites`).
 
 ### 6.6 브라우저 타겟 (B4)
 
@@ -629,9 +631,14 @@ navigate(to)
 | `ssr-kit/node` | `(req, res, next?) => Promise<void>` — Express·Connect·Polka | P0 |
 | `ssr-kit/fastify` | `fastify.register(ssrKit, opts)` — `reply.hijack()` 후 `reply.raw` | 구현 |
 | `ssr-kit/hono` | `app.use('*', ssrKit(opts))` 미들웨어 — 매치 없으면 `next()` | 구현 |
-| `ssr-kit/web` | `createWebHandler(opts)(request) => Promise<Response \| null>` | 구현 |
+| `ssr-kit/web` | `createWebHandler(opts)(request) => Promise<Response \| null>` — Node 스트림 렌더러 | 구현 |
+| `ssr-kit/edge` | `createEdgeHandler(opts)(request) => Promise<Response \| null>` — `renderToReadableStream`, `node:*` 없음 | 구현 |
 
-- Web·Hono 어댑터도 렌더러는 Node 스트림(`renderToPipeableStream` + `Readable.toWeb`)을 쓴다. 렌더 경로를 하나로 유지하려는 선택이며, Node·Bun·Deno 에서 동작하고 Cloudflare Workers 는 `nodejs_compat` 이 필요하다. `renderToReadableStream` 경로는 수요가 생기면 추가한다.
+- `server/request` 는 `RenderSink` 인터페이스(`writeHead`·`end`·`signal`·`renderTree`)에만 의존하고 렌더러는 sink 가 가진다. Node 렌더러(`server/stream.tsx`: `renderToPipeableStream` + flush 경계 데이터 삽입)와 Web 렌더러(`edge/index.tsx`)가 있다.
+- `ssr-kit/web` 은 Node 렌더러를 `Readable.toWeb` 으로 감싸 Node·Bun·Deno 에서 쓴다. Promise 데이터를 React 출력 사이사이에 끼울 수 있다.
+- `ssr-kit/edge` 는 Workers·Vercel Edge 용. React web 스트림은 flush 경계를 알 수 없어서 settle 스크립트를 **React 출력이 끝난 뒤에** 붙인다. HTML 의 Suspense 경계는 그대로 점진 스트리밍되지만, Promise 데이터를 쓰는 경계의 hydrate 는 응답 끝까지 기다린다.
+- `ssr-kit/hono` 는 어디서나 돌도록 edge 렌더러를 쓴다.
+- edge 모듈 그래프에 `node:*` import 가 없는지 테스트(`test/edge.test.tsx`)로 확인한다.
 - 어댑터 공통 옵션은 `AdapterOptions<Req>` (콜백은 각 프레임워크의 원본 요청/Context 를 받는다).
 
 `server/` 는 `SsrRequest` 와 `RenderSink` 만 안다. 어댑터는 원본 요청 → `SsrRequest` 변환과 sink 구현만 담당한다.

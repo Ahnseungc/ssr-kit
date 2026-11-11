@@ -4,6 +4,7 @@ import { createMatcher } from '../core/match';
 import { deserialize } from '../core/serialize';
 import type { RouteDef, RouteMatch, RouteModule, SsrPayload } from '../core/types';
 import type { NavigateOptions, RouterActions, RouterState } from '../react/context';
+import { showDevOverlay } from './overlay';
 
 type DataResponse =
   { type: 'data'; payload: unknown[] } | { type: 'redirect'; to: string; status: number };
@@ -165,6 +166,7 @@ export const createClientRouter = ({
       ? deserialize<SsrPayload>(response.payload)
       : { routes: matches.map((m) => m.id), data: {}, status: 200 };
 
+    if (state.dev) showDevOverlay(payload.error?.error);
     saveScroll();
     const key = writeHistory(mode, url, userState);
     flushSync(() =>

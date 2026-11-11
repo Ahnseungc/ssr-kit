@@ -4,7 +4,7 @@ import { preinit, preloadModule } from 'react-dom';
 import { isReportable } from '../core/errors';
 import type { SsrRequest } from '../core/types';
 import type { ResolvedAssets, ServerBuild } from './build';
-import { type ErrorPhase, type RenderSink, streamTree } from './stream';
+import type { ErrorPhase, RenderSink } from './sink';
 
 export interface RenderOptions {
   request: SsrRequest;
@@ -50,9 +50,8 @@ export const render = async (
     else console.error(`[ssr-kit] ${phase} 에러 (${request.url.pathname})`, error);
   };
 
-  await streamTree(<Preload assets={assets}>{options.app}</Preload>, {
-    request,
-    sink,
+  await sink.renderTree(<Preload assets={assets}>{options.app}</Preload>, {
+    method: request.method,
     status: options.status ?? 200,
     headers: options.headers ?? new Headers(),
     bootstrapModules: build.bootstrapModules,
@@ -64,7 +63,7 @@ export const render = async (
     report,
     onShellError: () => {
       sink.writeHead(500, new Headers({ 'content-type': 'text/plain; charset=utf-8' }));
-      sink.stream.end('Internal Server Error');
+      sink.end('Internal Server Error');
     },
   });
 };

@@ -6,6 +6,7 @@ import type { DocumentProps, RouteDef, SsrPayload } from '../core/types';
 import { DefaultDocument, Root } from '../react/components';
 import { RouterActionsContext, type RouterState, RouterStateContext } from '../react/context';
 import { readSsrData } from './deferred';
+import { showDevOverlay } from './overlay';
 import { type ClientRouter, createClientRouter } from './router';
 
 export { readSsrData };
@@ -89,6 +90,9 @@ export const hydrate = async ({
     onUncaughtError: onError,
   });
 
-  if (dev) Object.assign(window, { __ssrkRevalidate: router.actions.revalidate });
+  if (dev) {
+    Object.assign(window, { __ssrkRevalidate: router.actions.revalidate });
+    showDevOverlay(payload.error?.error);
+  }
   if (payload.shell) router.actions.revalidate();
 };

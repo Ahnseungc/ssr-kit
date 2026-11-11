@@ -8,7 +8,8 @@ import type { RouteModule } from '../src/core/types';
 import { DefaultDocument } from '../src/react/components';
 import { useLoaderData } from '../src/react/hooks';
 import type { ServerBuild } from '../src/server/build';
-import { type HandleOptions,handleRequest } from '../src/server/request';
+import { type HandleOptions, handleRequest } from '../src/server/request';
+import { createNodeSink } from '../src/server/stream';
 
 const later = <T,>(ms: number, value: T) => new Promise<T>((r) => setTimeout(() => r(value), ms));
 const failLater = (ms: number) =>
@@ -63,13 +64,13 @@ const run = async (pathname: string, options: Partial<HandleOptions> = {}) => {
   await handleRequest(
     build,
     request(pathname),
-    {
+    createNodeSink({
       writeHead: (s) => {
         status = s;
       },
       stream,
       signal: new AbortController().signal,
-    },
+    }),
     { isBot: false, renderTimeout: 1_000, unmatched: 'render', onError: () => {}, ...options },
   );
   await ended;

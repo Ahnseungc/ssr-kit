@@ -4,4 +4,6 @@ export type { RenderOptions } from './render';
 export { render } from './render';
 export type { HandleOptions, HandleResult } from './request';
 export { handleRequest } from './request';
-export type { ErrorPhase, RenderSink } from './stream';
+export type { ErrorPhase, RenderSink, TreeRenderOptions } from './sink';
+export type { NodeTarget } from './stream';
+export { createNodeSink } from './stream';

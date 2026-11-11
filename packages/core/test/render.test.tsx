@@ -4,6 +4,7 @@ import { Suspense, use } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { render } from '../src/server/render';
+import { createNodeSink } from '../src/server/stream';
 
 const later = <T,>(ms: number, value: T) => new Promise<T>((r) => setTimeout(() => r(value), ms));
 
@@ -34,7 +35,11 @@ const run = async (app: React.ReactNode, data: unknown, nonce?: string) => {
       modules: ['page'],
       nonce,
     },
-    { writeHead: (s) => (status = s), stream, signal: new AbortController().signal },
+    createNodeSink({
+      writeHead: (s) => (status = s),
+      stream,
+      signal: new AbortController().signal,
+    }),
   );
   await ended;
   return { status, html: chunks.join('') };

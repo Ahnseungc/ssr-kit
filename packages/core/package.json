@@ -52,6 +52,10 @@
       "types": "./dist/prerender.d.ts",
       "default": "./dist/prerender.js"
     },
+    "./edge": {
+      "types": "./dist/edge.d.ts",
+      "default": "./dist/edge.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

@@ -8,6 +8,7 @@ export default defineConfig({
     node: 'src/node/index.ts',
     vite: 'src/vite/index.ts',
     web: 'src/web/index.ts',
+    edge: 'src/edge/index.tsx',
     hono: 'src/hono/index.ts',
     fastify: 'src/fastify/index.ts',
     prerender: 'src/prerender/index.ts',

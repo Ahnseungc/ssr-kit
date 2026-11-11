@@ -78,8 +78,8 @@ export const createDevServer = async (options: DevServerOptions): Promise<DevSer
         withBase(base, '/@vite/client'),
         withBase(base, `/@id/__x00__${CLIENT_ENTRY}`),
       ],
+      // 스택은 모듈 러너가 이미 소스맵으로 고쳐 준다 (ssrFixStacktrace 를 또 부르면 경고가 붙는다)
       resolveAssets,
-      fixStacktrace: (error) => vite.ssrFixStacktrace(error),
     };
   };
 

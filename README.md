@@ -104,16 +104,15 @@ pnpm e2e            # 예제 앱 prod 서버 E2E (Playwright)
 구현: 코드 라우팅·우선순위·params 타입, 병렬 로더·redirect·에러 경계·헤더 병합, 스트리밍 SSR + document hydrate,
 Promise 데이터 스트리밍(`use()`), 데이터 엔드포인트(`/_data/*`), head 병합, 클라 이동·프리패치·스크롤 복원, `ssr: false` 셸,
 Vite 8 Environment API 빌드·dev 서버, 클라 번들 `loader` 제거·`*.server` 차단, 라우트 모듈 Fast Refresh,
-CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), prerender(`ssr-kit-prerender`),
-어댑터 Node·Fastify·Hono·Web(`Request → Response`).
-
-아직: Vite 에러 오버레이 연결, `renderToReadableStream` 기반 Workers 전용 경로, prerender 데이터 JSON.
+CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), prerender(`ssr-kit-prerender`, HTML + 데이터 JSON),
+dev 5xx 에러 Vite 오버레이, 어댑터 Node·Fastify·Hono·Web·Edge(Workers, `node:*` 없음).
 
 | 서브패스 | 내용 |
 |---|---|
 | `ssr-kit` | 라우트 정의·훅·`Link`·`Outlet`·`Head` |
 | `ssr-kit/node` | Express·Connect 핸들러 |
 | `ssr-kit/fastify` · `ssr-kit/hono` · `ssr-kit/web` | 프레임워크 어댑터 |
+| `ssr-kit/edge` | Workers·Vercel Edge 용 `Request → Response` (Web 스트림 렌더러) |
 | `ssr-kit/server` | `handleRequest`, 저수준 `render()` |
 | `ssr-kit/client` | `hydrate`, `readSsrData` |
 | `ssr-kit/vite` | `ssrKit`, `fsRoutes`, `createDevServer` |

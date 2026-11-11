@@ -5,7 +5,8 @@ import { finished } from 'node:stream/promises';
 
 import type { SsrRequest } from '../core/types';
 import type { ServerBuild } from '../server/build';
-import { type ErrorPhase, handleRequest, type RenderSink } from '../server/request';
+import { type ErrorPhase, handleRequest } from '../server/request';
+import { createNodeSink } from '../server/stream';
 
 export interface PrerenderOptions {
   build: ServerBuild;
@@ -14,6 +15,11 @@ export interface PrerenderOptions {
   outDir: string;
   /** 로더가 보는 request.url 의 origin. 기본 http://localhost */
   origin?: string;
+  /**
+   * 클라 이동용 데이터 JSON 도 쓴다 (기본 true): `<outDir><dataPrefix><path>/index.json`.
+   * 정적 호스팅에서는 `<dataPrefix>/:path` 를 `<dataPrefix>/:path/index.json` 으로 rewrite 해야 한다.
+   */
+  data?: boolean;
   onError?: (error: unknown, info: { url: string; phase: ErrorPhase }) => void;
 }
 
@@ -22,6 +28,8 @@ export interface PrerenderResult {
   status: number;
   /** 200 일 때 쓴 파일 절대 경로 */
   file?: string;
+  /** 데이터 JSON 을 썼을 때 그 절대 경로 */
+  dataFile?: string;
   /** 3xx 일 때 Location */
   location?: string;
   /** 렌더 자체가 실패했을 때(status 500) */
@@ -34,6 +42,7 @@ const RENDER_TIMEOUT_MS = 10_000;
 const STATUS_OK = 200;
 const STATUS_INTERNAL_ERROR = 500;
 const INDEX_FILE = 'index.html';
+const DATA_FILE = 'index.json';
 
 interface Captured {
   status: number;
@@ -48,13 +57,13 @@ const createMemorySink = () => {
   stream.on('data', (chunk: Buffer) => chunks.push(chunk));
   let head: { status: number; headers: Headers } | null = null;
 
-  const sink: RenderSink = {
+  const sink = createNodeSink({
     writeHead(status, headers) {
       head = { status, headers };
     },
     stream,
     signal: new AbortController().signal,
-  };
+  });
 
   const collect = async (): Promise<Captured> => {
     await finished(stream);
@@ -67,10 +76,10 @@ const createMemorySink = () => {
 };
 
 /** `/` → index.html, `/a/b` → a/b/index.html. outDir 밖으로 나가면 에러 */
-export const outputFile = (outDir: string, pathname: string) => {
+export const outputFile = (outDir: string, pathname: string, fileName = INDEX_FILE) => {
   const root = resolve(outDir);
   const segments = decodeURIComponent(pathname).split('/').filter(Boolean);
-  const file = resolve(join(root, ...segments, INDEX_FILE));
+  const file = resolve(join(root, ...segments, fileName));
   const rel = relative(root, file);
   if (rel.startsWith('..') || rel.split(sep).includes('..')) {
     throw new Error(`[ssr-kit] outDir 밖 경로는 프리렌더할 수 없습니다: ${pathname}`);
@@ -78,11 +87,9 @@ export const outputFile = (outDir: string, pathname: string) => {
   return file;
 };
 
-const renderPath = async (options: PrerenderOptions, path: string): Promise<PrerenderResult> => {
-  const url = new URL(path, options.origin ?? DEFAULT_ORIGIN);
+const capture = async (options: PrerenderOptions, url: URL) => {
   const request: SsrRequest = { url, method: 'GET', headers: new Headers(), raw: null };
   const { sink, collect } = createMemorySink();
-
   await handleRequest(options.build, request, sink, {
     // 모든 Suspense 가 풀린 완성 HTML 을 얻기 위해 봇 모드로 렌더
     isBot: true,
@@ -90,16 +97,36 @@ const renderPath = async (options: PrerenderOptions, path: string): Promise<Prer
     unmatched: 'render',
     onError: options.onError,
   });
-  const { status, headers, body } = await collect();
+  return collect();
+};
 
-  const location = headers.get('location');
-  if (location) return { path, status, location };
-  if (status !== STATUS_OK) return { path, status };
-
-  const file = outputFile(options.outDir, url.pathname);
+const write = async (file: string, body: string) => {
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, body);
-  return { path, status, file };
+  return file;
+};
+
+/** 데이터 엔드포인트 응답을 JSON 으로 쓴다. redirect 응답(type: 'redirect')도 200 이라 함께 쓴다 */
+const writeData = async (options: PrerenderOptions, url: URL) => {
+  const { dataPrefix } = options.build;
+  const dataUrl = new URL(`${dataPrefix}${url.pathname}${url.search}`, url);
+  const { status, body } = await capture(options, dataUrl);
+  if (status !== STATUS_OK) return undefined;
+  return write(outputFile(options.outDir, `${dataPrefix}${url.pathname}`, DATA_FILE), body);
+};
+
+const renderPath = async (options: PrerenderOptions, path: string): Promise<PrerenderResult> => {
+  const url = new URL(path, options.origin ?? DEFAULT_ORIGIN);
+  const { status, headers, body } = await capture(options, url);
+  const dataFile = options.data === false ? undefined : await writeData(options, url);
+  const withData = dataFile ? { dataFile } : {};
+
+  const location = headers.get('location');
+  if (location) return { path, status, location, ...withData };
+  if (status !== STATUS_OK) return { path, status };
+
+  const file = await write(outputFile(options.outDir, url.pathname), body);
+  return { path, status, file, ...withData };
 };
 
 /** 한 경로 실패가 전체를 멈추지 않도록 결과로 바꾼다 */

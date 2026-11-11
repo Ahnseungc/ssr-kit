@@ -15,10 +15,10 @@ import type {
 import { DefaultDocument, Root } from '../react/components';
 import { RequestContextContext, type RouterState, RouterStateContext } from '../react/context';
 import type { ResolvedAssets, ServerBuild } from './build';
-import { serializeSettledPayload } from './deferred';
-import { type ErrorPhase, type RenderSink, streamTree } from './stream';
+import { serializeSettledPayload } from './payload';
+import type { ErrorPhase, RenderSink } from './sink';
 
-export type { ErrorPhase, RenderSink } from './stream';
+export type { ErrorPhase, RenderSink, TreeRenderOptions } from './sink';
 
 export interface HandleOptions {
   getContext?: (request: SsrRequest) => AppContext | Promise<AppContext>;
@@ -70,13 +70,13 @@ const routeFiles = (matches: RouteMatch[]) =>
 
 const textResponse = (sink: RenderSink, status: number, text: string) => {
   sink.writeHead(status, new Headers({ 'content-type': 'text/plain; charset=utf-8' }));
-  sink.stream.end(text);
+  sink.end(text);
 };
 
 const jsonResponse = (sink: RenderSink, status: number, headers: Headers, body: string) => {
   headers.set('content-type', 'application/json; charset=utf-8');
   sink.writeHead(status, headers);
-  sink.stream.end(body);
+  sink.end(body);
 };
 
 interface DocumentInput {
@@ -101,15 +101,14 @@ const renderDocument = (
   input: DocumentInput,
   isFallback = false,
 ): Promise<void> =>
-  streamTree(
+  sink.renderTree(
     <RequestContextContext value={input.context}>
       <RouterStateContext value={input.state}>
         <ServerRoot build={build} assets={input.assets} />
       </RouterStateContext>
     </RequestContextContext>,
     {
-      request,
-      sink,
+      method: request.method,
       status: input.status,
       headers: input.headers,
       bootstrapModules: build.bootstrapModules,
@@ -288,7 +287,7 @@ export const handleRequest = async (
   if (result.type === 'redirect') {
     result.headers.set('location', result.to);
     sink.writeHead(result.status, result.headers);
-    sink.stream.end();
+    sink.end();
     return 'handled';
   }
 
