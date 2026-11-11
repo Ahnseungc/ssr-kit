@@ -32,7 +32,7 @@ const handle = async (options: FastifySsrOptions, request: FastifyRequest, reply
     );
   } catch (error) {
     if (error instanceof Error) options.build.fixStacktrace?.(error);
-    console.error('[ssr-kit] 요청 처리 실패', error);
+    console.error('[ssr-kit] request handling failed', error);
     fail(res, error);
   }
 };

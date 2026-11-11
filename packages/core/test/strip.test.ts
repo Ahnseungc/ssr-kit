@@ -141,11 +141,11 @@ export default () => null;
   });
 
   it('여러 선언이 섞인 export const action 도 에러', () => {
-    expect(() => strip(`export const action = () => 1, other = 2;`)).toThrow(/action.*따로/);
+    expect(() => strip(`export const action = () => 1, other = 2;`)).toThrow(/action.*separately/);
   });
 
   it('여러 선언이 섞인 export const loader 는 에러', () => {
-    expect(() => strip(`export const loader = () => 1, other = 2;`)).toThrow(/따로/);
+    expect(() => strip(`export const loader = () => 1, other = 2;`)).toThrow(/separately/);
   });
 
   it('export const middleware (배열 포함) 와 미들웨어 전용 헬퍼·import 를 지우고 표시를 남긴다', () => {
@@ -230,9 +230,9 @@ export default defineRoutes([
   it('리터럴이 아니거나 화살표 함수 밖의 import() 는 에러', () => {
     expect(() =>
       scanRoutesFile('r.ts', `const p = './x'; export default [{ module: () => import(p) }];`),
-    ).toThrow(/리터럴/);
+    ).toThrow(/string literal/);
     expect(() =>
       scanRoutesFile('r.ts', `export default [{ module: () => { return import('./x'); } }];`),
-    ).toThrow(/형태/);
+    ).toThrow(/must be wrapped/);
   });
 });

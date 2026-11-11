@@ -13,7 +13,7 @@ interface Branch {
 
 export class InvalidPathError extends Error {
   constructor(pathname: string) {
-    super(`잘못된 경로 인코딩: ${pathname}`);
+    super(`Invalid path encoding: ${pathname}`);
   }
 }
 
@@ -26,7 +26,7 @@ const parseSegment = (raw: string, fullPath: string): Segment => {
       ? { kind: 'optional', name: raw.slice(1, -1) }
       : { kind: 'param', name: raw.slice(1) };
   }
-  if (raw.includes('*')) throw new Error(`'*' 는 단독 세그먼트로만 쓸 수 있다: ${fullPath}`);
+  if (raw.includes('*')) throw new Error(`'*' must be a whole segment on its own: ${fullPath}`);
   return { kind: 'static', value: raw };
 };
 
@@ -49,7 +49,7 @@ const flatten = (routes: RouteDef[]): Branch[] => {
   ) => {
     list.forEach((route, index) => {
       const id = route.id ?? (parentId === null ? `${index}` : `${parentId}-${index}`);
-      if (ids.has(id)) throw new Error(`라우트 id 중복: ${id}`);
+      if (ids.has(id)) throw new Error(`Duplicate route id: ${id}`);
       ids.add(id);
 
       const fullPath = joinPath(parentPath, route.path);
@@ -62,7 +62,7 @@ const flatten = (routes: RouteDef[]): Branch[] => {
       const raw = splitPath(fullPath);
       raw.forEach((segment, i) => {
         if (segment === '*' && i !== raw.length - 1) {
-          throw new Error(`'*' 는 마지막 세그먼트만 가능: ${fullPath}`);
+          throw new Error(`'*' is only allowed as the last segment: ${fullPath}`);
         }
       });
       const segments = raw.map((segment) => parseSegment(segment, fullPath));

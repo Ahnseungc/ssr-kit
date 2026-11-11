@@ -74,7 +74,7 @@ const renderTree = async (
   const { bootstrap, entries } = serializeDocumentPayload(options.data, options.dev);
   const abort = new AbortController();
   const timer = setTimeout(
-    () => abort.abort(new Error(`renderTimeout(${options.renderTimeout}ms) 초과`)),
+    () => abort.abort(new Error(`renderTimeout (${options.renderTimeout}ms) exceeded`)),
     options.renderTimeout,
   );
   if (signal.aborted) abort.abort();

@@ -67,7 +67,7 @@ const streamTree = (target: NodeTarget, tree: ReactNode, options: TreeRenderOpti
     });
 
     const timer = setTimeout(
-      () => stream.abort(new Error(`renderTimeout(${options.renderTimeout}ms) 초과`)),
+      () => stream.abort(new Error(`renderTimeout (${options.renderTimeout}ms) exceeded`)),
       options.renderTimeout,
     );
     timer.unref?.();

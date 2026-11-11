@@ -67,7 +67,7 @@ const createMemorySink = () => {
 
   const collect = async (): Promise<Captured> => {
     await finished(stream);
-    if (!head) throw new Error('[ssr-kit] 응답 헤더 없이 스트림이 끝났습니다');
+    if (!head) throw new Error('[ssr-kit] Stream ended without response headers');
     const { status, headers } = head;
     return { status, headers, body: Buffer.concat(chunks).toString('utf8') };
   };
@@ -82,7 +82,7 @@ export const outputFile = (outDir: string, pathname: string, fileName = INDEX_FI
   const file = resolve(join(root, ...segments, fileName));
   const rel = relative(root, file);
   if (rel.startsWith('..') || rel.split(sep).includes('..')) {
-    throw new Error(`[ssr-kit] outDir 밖 경로는 프리렌더할 수 없습니다: ${pathname}`);
+    throw new Error(`[ssr-kit] Cannot prerender a path outside outDir: ${pathname}`);
   }
   return file;
 };

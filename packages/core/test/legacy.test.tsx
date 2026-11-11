@@ -66,7 +66,7 @@ describe('plugin-legacy 스니펫 미러', () => {
       modernPolyfills: 'p.js',
     });
     expect(() => findLegacyAssets({ 'app-legacy': entry }, 'app')).toThrow(/renderModernChunks/);
-    expect(() => findLegacyAssets({ app: entry }, 'app')).toThrow(/레거시 엔트리/);
+    expect(() => findLegacyAssets({ app: entry }, 'app')).toThrow(/legacy entry/);
   });
 });
 

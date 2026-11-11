@@ -16,7 +16,7 @@ export const useLoaderData = <L = unknown>(): LoaderData<L> => {
   const state = useRouterState();
   const index = useContext(RouteIndexContext);
   const match = state.matches[index];
-  if (!match) throw new Error('useLoaderData 는 라우트 컴포넌트 안에서만 호출할 수 있다');
+  if (!match) throw new Error('useLoaderData must be called inside a route component');
   return state.payload.data[match.id] as LoaderData<L>;
 };
 

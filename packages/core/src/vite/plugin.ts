@@ -109,7 +109,7 @@ const toAssetManifest = (manifest: Manifest, keys: Iterable<string>): AssetManif
   // plugin-legacy 를 쓰면 레거시 엔트리·폴리필도 isEntry 라 모던 엔트리를 먼저 찾는다
   const entryKey =
     findEntryKey(manifest) ?? Object.keys(manifest).find((key) => manifest[key]!.isEntry);
-  if (!entryKey) throw new Error('client 매니페스트에 엔트리가 없다');
+  if (!entryKey) throw new Error('No entry found in the client manifest');
   const entry = flatten(entryKey);
 
   const modules: AssetManifest['modules'] = {};
@@ -141,7 +141,7 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
       const files = new Set<string>();
       for (const item of info.imports) {
         const resolved = await resolve(item.source, routesFile);
-        if (!resolved) throw new Error(`라우트 모듈을 찾을 수 없다: ${item.source}`);
+        if (!resolved) throw new Error(`Cannot resolve route module: ${item.source}`);
         const file = cleanId(resolved.id);
         files.add(file);
         keys.set(item.source, toKey(file));
@@ -161,12 +161,12 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
       const result = extractRoutePatterns(routesFile, readFileSync(routesFile, 'utf8'));
       if ('reason' in result) {
         config.logger.warn(
-          `${PLUGIN_NAME}: ${options.routes} 에서 라우트 패턴을 뽑지 못해 링크 타입을 string 으로 둔다 (${result.reason})`,
+          `${PLUGIN_NAME}: could not extract route patterns from ${options.routes}; link types fall back to string (${result.reason})`,
         );
       }
       writeIfChanged(routesDtsFile, generateRoutesDts('reason' in result ? null : result.patterns));
     } catch (error) {
-      config.logger.warn(`${PLUGIN_NAME}: routes d.ts 생성 실패 (${(error as Error).message})`);
+      config.logger.warn(`${PLUGIN_NAME}: failed to generate routes d.ts (${(error as Error).message})`);
     }
   };
 
@@ -177,7 +177,7 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
     ];
     if (!info.hasDefaultExport && !info.hasRoutesExport) {
       throw new Error(
-        `${options.routes} 는 default 또는 routes 이름으로 라우트를 export 해야 한다`,
+        `${options.routes} must export routes as default or as \`routes\``,
       );
     }
     lines.push(
@@ -336,8 +336,8 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
         const importers =
           this.environment.mode === 'build' ? (this.getModuleInfo(id)?.importers ?? []) : [];
         this.error(
-          `서버 전용 모듈이 클라이언트 번들에 들어왔다: ${toKey(file)}` +
-            (importers.length ? ` (import 한 곳: ${importers.map(toKey).join(', ')})` : ''),
+          `Server-only module ended up in the client bundle: ${toKey(file)}` +
+            (importers.length ? ` (imported by: ${importers.map(toKey).join(', ')})` : ''),
         );
       }
       const { files } = await discover(this.resolve.bind(this));

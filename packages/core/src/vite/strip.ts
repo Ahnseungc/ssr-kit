@@ -91,7 +91,7 @@ const removeServerExports = (code: string, body: AstNode[], s: MagicString, remo
         .find((name) => isServerExport(name));
       if (!hit) continue;
       if (declarations.length > 1) {
-        throw new Error(`'export const ${hit}' 는 다른 선언과 따로 써야 한다`);
+        throw new Error(`'export const ${hit}' must be declared separately from other declarations`);
       }
       s.remove(stmt.start, stmt.end);
       removed.push([stmt.start, stmt.end]);

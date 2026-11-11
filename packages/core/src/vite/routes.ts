@@ -28,10 +28,10 @@ export const scanRoutesFile = (id: string, code: string): RoutesFileInfo => {
     if (node.type !== 'ImportExpression') return;
     const source = node.source as AstNode;
     if (source.type !== 'Literal') {
-      throw new Error(`${id}: 라우트 모듈은 import('리터럴') 로만 지정할 수 있다`);
+      throw new Error(`${id}: route module must be import('<string literal>')`);
     }
     if (parent?.type !== 'ArrowFunctionExpression' || !isLiteralImport(parent.body as AstNode)) {
-      throw new Error(`${id}: import('${source.value}') 는 () => import('…') 형태여야 한다`);
+      throw new Error(`${id}: import('${source.value}') must be wrapped as () => import('…')`);
     }
     imports.push({ source: source.value as string, start: parent.start, end: parent.end });
   });

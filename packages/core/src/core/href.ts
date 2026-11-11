@@ -51,7 +51,7 @@ const fillSegment = (
 ): string | undefined => {
   if (segment === '*') {
     const value = params['*'];
-    if (value === undefined) throw new Error(`href: '*' 파라미터가 없다 (${pattern})`);
+    if (value === undefined) throw new Error(`href: missing '*' param (${pattern})`);
     return value === '' ? undefined : encodeSplat(value);
   }
   if (!segment.startsWith(':')) return segment;
@@ -60,7 +60,7 @@ const fillSegment = (
   const value = params[name];
   if (value !== undefined) return encodeURIComponent(value);
   if (optional) return undefined;
-  throw new Error(`href: '${name}' 파라미터가 없다 (${pattern})`);
+  throw new Error(`href: missing '${name}' param (${pattern})`);
 };
 
 /** `href('/gold/:id', { id: '1' })` → `'/gold/1'`. 값은 encodeURIComponent, 비운 옵셔널은 뺀다 */

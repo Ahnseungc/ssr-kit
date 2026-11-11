@@ -50,10 +50,10 @@ export const createDevServer = async (options: DevServerOptions): Promise<DevSer
   });
   const env = vite.environments.ssr;
   if (!env || !isRunnableDevEnvironment(env)) {
-    throw new Error('Vite ssr 환경이 RunnableDevEnvironment 가 아니다');
+    throw new Error('Vite ssr environment is not a RunnableDevEnvironment');
   }
   const plugin = vite.config.plugins.find((p) => p.name === PLUGIN_NAME);
-  if (!plugin) throw new Error('vite.config 에 ssrKit() 플러그인이 없다');
+  if (!plugin) throw new Error('ssrKit() plugin not found in vite.config');
   const api = plugin.api as SsrKitApi;
   const base = vite.config.base;
 

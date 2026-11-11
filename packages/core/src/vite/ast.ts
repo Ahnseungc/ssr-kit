@@ -10,7 +10,7 @@ export interface AstNode {
 export const parse = (filename: string, code: string) => {
   const result = parseSync(filename, code);
   if (result.errors.length) {
-    throw new Error(`${filename} 파싱 실패: ${result.errors[0]!.message}`);
+    throw new Error(`Failed to parse ${filename}: ${result.errors[0]!.message}`);
   }
   return result.program as unknown as AstNode & { body: AstNode[] };
 };

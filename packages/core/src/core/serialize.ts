@@ -17,7 +17,7 @@ type Entry = unknown;
 
 export class SerializeError extends Error {
   constructor(path: string, reason: string) {
-    super(`직렬화할 수 없는 값 (${path}): ${reason}`);
+    super(`Cannot serialize value (${path}): ${reason}`);
   }
 }
 
@@ -114,13 +114,13 @@ export const serialize = (root: unknown, options: SerializeOptions = {}): string
     }
     if (object instanceof Promise) {
       if (!options.onPromise)
-        throw new SerializeError(path, 'Promise 는 로더 데이터에서만 쓸 수 있다');
+        throw new SerializeError(path, 'Promises are only allowed in loader data');
       const encoded = options.onPromise(object);
       if ('id' in encoded) return ['P', encoded.id];
       return ['p', encoded.ok ? 1 : 0, add(encoded.value, `${path}<settled>`)];
     }
     if (!isPlainObject(object)) {
-      throw new SerializeError(path, `클래스 인스턴스 ${object.constructor?.name ?? ''}`);
+      throw new SerializeError(path, `class instance ${object.constructor?.name ?? ''}`);
     }
 
     const out: Record<string, number> = {};
@@ -206,7 +206,7 @@ export const deserialize = <T = unknown>(
       case 'X':
         return read(rest[0] as number);
       case 'P': {
-        if (!options.promise) throw new Error('스트리밍 Promise 를 복원할 수 없다');
+        if (!options.promise) throw new Error('Cannot restore streamed Promise');
         return remember(index, options.promise(rest[0] as number));
       }
       case 'p': {
@@ -236,7 +236,7 @@ export const deserialize = <T = unknown>(
         return out;
       }
     }
-    throw new Error(`알 수 없는 직렬화 태그: ${tag}`);
+    throw new Error(`Unknown serialization tag: ${tag}`);
   };
 
   const remember = <V>(index: number, value: V): V => {

@@ -1,5 +1,6 @@
 # ssr-kit
 
+[![npm](https://img.shields.io/npm/v/ssr-kit)](https://www.npmjs.com/package/ssr-kit)
 [![CI](https://github.com/Ahnseungc/ssr-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Ahnseungc/ssr-kit/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Ahnseungc/ssr-kit/blob/main/LICENSE)
 

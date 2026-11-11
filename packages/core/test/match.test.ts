@@ -113,7 +113,7 @@ describe('createMatcher', () => {
         { id: 'x', path: 'a', module: mod },
         { id: 'x', path: 'b', module: mod },
       ]),
-    ).toThrow(/중복/);
+    ).toThrow(/Duplicate/);
     expect(() => createMatcher([{ path: 'a/*/b', module: mod }])).toThrow();
   });
 });

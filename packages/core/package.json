@@ -1,7 +1,24 @@
 {
   "name": "ssr-kit",
-  "version": "0.0.0",
-  "description": "Node 서버에 미들웨어로 붙는 React 19 스트리밍 SSR 플러그인",
+  "version": "0.1.0",
+  "description": "React 19 streaming SSR as one middleware for the Node server you already have. Vite 8 plugin, adapters for Express, Fastify, Hono, and Cloudflare Workers.",
+  "keywords": [
+    "react",
+    "ssr",
+    "streaming",
+    "server-side-rendering",
+    "vite",
+    "vite-plugin",
+    "express",
+    "hono",
+    "fastify",
+    "cloudflare-workers",
+    "react-19"
+  ],
+  "homepage": "https://github.com/Ahnseungc/ssr-kit#readme",
+  "bugs": {
+    "url": "https://github.com/Ahnseungc/ssr-kit/issues"
+  },
   "license": "MIT",
   "author": "안승찬",
   "repository": {
@@ -13,7 +30,9 @@
   "sideEffects": false,
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "LICENSE",
+    "README.md"
   ],
   "exports": {
     ".": {
@@ -64,7 +83,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "clean": "rm -rf dist coverage",
     "size": "node scripts/check-size.mjs",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "magic-string": "^1.4.5",
@@ -110,5 +130,8 @@
   },
   "bin": {
     "ssr-kit-prerender": "./bin/ssr-kit-prerender.js"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

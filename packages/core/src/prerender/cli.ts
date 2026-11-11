@@ -28,7 +28,7 @@ const parseCli = (argv: string[]) => {
 
 const loadBuild = async (entry: string): Promise<ServerBuild> => {
   const mod = (await import(pathToFileURL(resolve(entry)).href)) as { build?: ServerBuild };
-  if (!mod.build) throw new Error(`${entry} 에 build export 가 없습니다`);
+  if (!mod.build) throw new Error(`${entry} has no build export`);
   return mod.build;
 };
 
@@ -36,7 +36,7 @@ const describe = (result: PrerenderResult) => {
   if (result.file) return result.file;
   if (result.location) return `→ ${result.location}`;
   if (result.error) return String(result.error);
-  return '(파일 없음)';
+  return '(no file)';
 };
 
 const printSummary = (results: PrerenderResult[]) => {
@@ -66,6 +66,6 @@ const main = async () => {
 };
 
 main().catch((error: unknown) => {
-  console.error('[ssr-kit] prerender 실패', error);
+  console.error('[ssr-kit] prerender failed', error);
   process.exitCode = 1;
 });

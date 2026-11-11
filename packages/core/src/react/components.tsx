@@ -299,7 +299,7 @@ export const Form = ({
         action: to,
         replace,
       })
-      .catch((error: unknown) => console.error('[ssr-kit] 폼 제출 실패', error));
+      .catch((error: unknown) => console.error('[ssr-kit] form submit failed', error));
   };
 
   return (

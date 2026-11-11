@@ -62,7 +62,7 @@ export const RouterActionsContext = createContext<RouterActions>({
   navigate: noop,
   revalidate: noop,
   prefetch: noop,
-  submit: () => Promise.reject(new Error('ssr-kit 라우터가 hydrate 되기 전에는 submit 할 수 없다')),
+  submit: () => Promise.reject(new Error('Cannot submit before the ssr-kit router has hydrated')),
 });
 /** 현재 렌더 중인 라우트의 matches index */
 export const RouteIndexContext = createContext<number>(-1);
@@ -70,7 +70,7 @@ export const RequestContextContext = createContext<AppContext | null>(null);
 
 export const useRouterState = (): RouterState => {
   const state = useContext(RouterStateContext);
-  if (!state) throw new Error('ssr-kit 라우터 밖에서 훅을 호출했다');
+  if (!state) throw new Error('ssr-kit hook called outside the router');
   return state;
 };
 

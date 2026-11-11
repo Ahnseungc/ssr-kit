@@ -45,7 +45,7 @@ const settle: Settle = (id, ok, value) => {
 
 /** window.__SSRK 를 읽고, 스트리밍 Promise 의 settle 스크립트를 연결한다 */
 export const readSsrData = <T>(): T => {
-  if (!window.__SSRK) throw new Error('ssr-kit 서버 데이터(window.__SSRK)가 없다');
+  if (!window.__SSRK) throw new Error('ssr-kit server data (window.__SSRK) is missing');
   const data = deserialize<T>(window.__SSRK, { promise: (id) => getDeferred(id).promise });
   for (const args of window.__SSRKQ ?? []) {
     settle(args[0] as number, args[1] as 0 | 1, args[2] as unknown[]);

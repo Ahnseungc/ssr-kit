@@ -57,13 +57,13 @@ export const findLegacyAssets = (
   entryKey: string | undefined,
 ): LegacyAssets => {
   if (!entryKey || !manifest[entryKey]) {
-    throw new Error('@vitejs/plugin-legacy 의 renderModernChunks: false 는 지원하지 않는다');
+    throw new Error('@vitejs/plugin-legacy renderModernChunks: false is not supported');
   }
   const entry = manifest[`${entryKey}${LEGACY_SUFFIX}`];
   if (!entry) {
     throw new Error(
-      'client 매니페스트에 레거시 엔트리가 없다. renderLegacyChunks: false 이거나, ' +
-        'plugin-legacy 를 설정 파일 없이 인라인 설정으로 넘겨 환경별 설정에 공유된 경우다 (설정 파일로 옮길 것)',
+      'No legacy entry in the client manifest. Either renderLegacyChunks is false, or ' +
+        'plugin-legacy was passed inline without a config file and got shared across environments (move it into a config file)',
     );
   }
   return {

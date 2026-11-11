@@ -52,7 +52,7 @@ export const runMiddleware = async (
     const { index, fn } = steps[position]!;
     let called = false;
     const next = () => {
-      if (called) return Promise.reject(new Error('middleware 의 next() 는 한 번만 부를 수 있다'));
+      if (called) return Promise.reject(new Error('middleware next() can only be called once'));
       called = true;
       return dispatch(position + 1);
     };

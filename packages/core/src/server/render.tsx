@@ -47,7 +47,7 @@ export const render = async (
     if (!isReportable(error)) return;
     if (error instanceof Error) build.fixStacktrace?.(error);
     if (options.onError) options.onError(error, { url: request.url.href, phase });
-    else console.error(`[ssr-kit] ${phase} 에러 (${request.url.pathname})`, error);
+    else console.error(`[ssr-kit] ${phase} error (${request.url.pathname})`, error);
   };
 
   await sink.renderTree(<Preload assets={assets}>{options.app}</Preload>, {

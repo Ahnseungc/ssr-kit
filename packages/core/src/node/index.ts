@@ -84,7 +84,7 @@ export const createSsrHandler =
       if (result === 'unmatched') next?.();
     } catch (error) {
       if (error instanceof Error) options.build.fixStacktrace?.(error);
-      if (!next) console.error('[ssr-kit] 요청 처리 실패', error);
+      if (!next) console.error('[ssr-kit] request handling failed', error);
       fail(res, error, next);
     }
   };

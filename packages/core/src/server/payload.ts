@@ -34,7 +34,7 @@ export const serializeDocumentPayload = (payload: unknown, dev = false) => {
   });
   if (dev && json.length > DEV_PAYLOAD_WARN_BYTES) {
     console.warn(
-      `[ssr-kit] 문서에 실은 로더 데이터가 ${Math.round(json.length / 1024)}KB 다. 필요한 필드만 반환하는 걸 고려하자`,
+      `[ssr-kit] Loader data embedded in the document is ${Math.round(json.length / 1024)}KB. Consider returning only the fields you need`,
     );
   }
   return { bootstrap: `window.__SSRK=${escapeForScript(json)};${QUEUE_BOOTSTRAP}`, entries };
@@ -56,7 +56,7 @@ export const settleWithin = (
 ) =>
   Promise.race([settle(promise), timeout]).then((result): Outcome =>
     result === 'timeout'
-      ? { ok: false, value: new Error(`스트리밍 데이터가 ${timeoutMs}ms 안에 끝나지 않았다`) }
+      ? { ok: false, value: new Error(`Streaming data did not finish within ${timeoutMs}ms`) }
       : result,
   );
 

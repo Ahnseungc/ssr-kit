@@ -251,7 +251,7 @@ export const createClientRouter = ({
       return go(url.href, options.replace ? 'replace' : 'push');
     }
     if (url.origin !== window.location.origin) {
-      throw new Error(`다른 origin 으로는 submit 할 수 없다: ${url.href}`);
+      throw new Error(`Cannot submit to a different origin: ${url.href}`);
     }
     // 같은 주소로 보내면 revalidate 처럼 기록·스크롤을 그대로 둔다
     const sameUrl = url.pathname === pathname && url.search === search;
