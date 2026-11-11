@@ -129,7 +129,7 @@
     "node": ">=22"
   },
   "bin": {
-    "ssr-kit-prerender": "./bin/ssr-kit-prerender.js"
+    "ssr-kit-prerender": "bin/ssr-kit-prerender.js"
   },
   "publishConfig": {
     "access": "public"
