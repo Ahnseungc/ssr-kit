@@ -1,6 +1,8 @@
 import type { RouteModuleLoader } from './core/types';
 
 export { httpError, notFound, redirect } from './core/errors';
+export type { Href, HrefFor, PatternHref, Register, RoutePattern } from './core/href';
+export { href } from './core/href';
 export { defineRoutes } from './core/match';
 export type {
   AppContext,

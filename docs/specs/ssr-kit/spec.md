@@ -220,12 +220,13 @@ export function httpError(status: number, message?: string): never;
 | `useLoaderData<typeof loader>()` | 현재 라우트 로더 데이터 |
 | `useRouteLoaderData<typeof loader>(id)` | 다른(상위) 라우트 데이터 |
 | `useParams()` / `useLocation()` | 현재 매칭 정보 |
-| `useNavigate()` | `navigate(to, { replace?, state? })` |
+| `useNavigate()` | `navigate(to, { replace?, state? })`. `to` 는 `Href`(§4.4) |
 | `useNavigation()` | `{ state: 'idle' \| 'loading', location? }` |
 | `useRevalidate()` | 현재 로더 재실행 |
 | `useRequestContext()` | 서버: `AppContext`, 클라: `null` |
-| `<Link to prefetch="intent" \| "viewport" \| "none">` | 기본 `"intent"` |
+| `<Link to prefetch="intent" \| "viewport" \| "none">` | 기본 `"intent"`. `to` 는 `Href`(§4.4) |
 | `<Outlet />` | 자식 라우트 렌더 위치 |
+| `href(pattern, params)` | 패턴 → 주소 (§4.4) |
 | `<Head />` | 병합된 head 태그 렌더 (Document 안) |
 
 ### 3.5 Node 핸들러 (`ssr-kit/node`)
@@ -335,6 +336,36 @@ export function render(
 ### 4.3 타입 추론
 
 `Params<'/gold/:id/:tab?'>` → `{ id: string; tab?: string }`. `*` → `{ '*': string }`.
+
+### 4.4 타입 안전 링크
+
+옵트인. 등록하지 않으면 `Href = string` 이라 기존 코드는 그대로다.
+
+```ts
+// 사용자 또는 생성 파일이 확장한다
+declare module 'ssr-kit' {
+  interface Register { routes: '/' | '/gold/:id' | '/:lang?/about' | '/files/*' }
+}
+
+export type Href;                              // Link to · useNavigate() 인자
+export function href<P extends RoutePattern>(pattern: P, params?: Params<P>): Href;
+```
+
+- **Href:** 등록된 패턴마다 템플릿 리터럴. `:id` → `${string}`, `:lang?` → 세그먼트 있음/없음 두 갈래,
+  `*` → `/files` | `/files/${string}`. 각 갈래 뒤에 `?${string}`·`#${string}` 를 붙일 수 있다.
+  쿼리·해시만 있는 주소(`?page=2`, `#top`)와 `http(s)://` 외부 URL 도 받는다(Link 는 다른 origin 을 가로채지 않는다).
+- **href():** `:param` 은 `encodeURIComponent`, 비운 옵셔널은 세그먼트째 뺀다. `*` 는 `/` 로 나눠 조각마다 인코딩.
+  필수 파라미터(`*` 포함)가 없으면 throw. 파라미터 타입은 §4.3 `Params<P>`.
+- `redirect()` 는 `string` 그대로 둔다(서버는 외부·임의 경로로 보낼 수 있다).
+- **생성:** `ssrKit({ routesDts: true | '경로' })`(기본 `.ssr-kit/routes.d.ts`, root 기준). routes 파일을 `oxc-parser` 로
+  읽어 default/`routes` export 의 배열 리터럴(`defineRoutes(…)`·`as`·`satisfies`·최상위 const 식별자는 벗긴다)을 따라가며
+  `path`·`children` 을 §4.1 규칙(상대 경로는 부모에 잇고 `/` 시작은 절대, pathless 는 부모 경로)으로 이어
+  **리프 라우트만** 패턴으로 쓴다(매처의 flatten 과 같다). fsRoutes 생성 파일도 리터럴이라 그대로 읽힌다.
+  - `path` 가 문자열 리터럴이 아니거나 spread·계산된 키·변수 children 이 있으면 경고 후 `routes: string` 을 쓴다(검사 끔, 낡은 패턴이 남지 않게).
+  - `configResolved` 와 dev `watchChange`(routes 파일, fsRoutes 재생성 포함)에서 다시 만들고 내용이 같으면 쓰지 않는다.
+- **적용:** tsconfig `include` 에 `".ssr-kit/routes.d.ts"` 를 파일로 넣는다. `typecheck` 가 `vite build` 보다 먼저 도는 CI 를 위해 생성 파일은 커밋을 권한다(예제 앱도 커밋).
+- **TS 비용:** 갈래 수 = 패턴마다 2^(옵셔널 수) × 3(접미사). 패턴 50개·옵셔널 최대 3개 조합 타입 테스트에서 문제없다.
+  옵셔널이 많은 패턴이 수백 개면 유니온이 커지므로 그때는 등록하지 않거나 패턴을 나눈다.
 
 ## 5. 서버 요청 처리
 
@@ -467,6 +498,7 @@ export interface SsrKitPluginOptions {
   routes: string;          // routes 파일 경로 (root 기준)
   document?: string;       // Document 컴포넌트 파일 경로
   dataPrefix?: string;     // 기본 '/_data'
+  routesDts?: boolean | string; // 타입 안전 링크 d.ts 생성 (§4.4)
 }
 ```
 

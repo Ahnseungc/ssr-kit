@@ -179,18 +179,25 @@ const readOrEmpty = (file: string) => {
   }
 };
 
-/** 생성 파일을 쓴다. 내용이 바뀌었을 때만 써서 watcher 루프를 막는다. 썼으면 true */
+/** 내용이 바뀌었을 때만 써서 watcher 루프를 막는다. 썼으면 true */
+export const writeIfChanged = (file: string, content: string): boolean => {
+  if (readOrEmpty(file) === content) return false;
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, content);
+  return true;
+};
+
+/** 생성 파일을 쓴다. 썼으면 true */
 export const writeRoutesFile = (dirAbs: string, outAbs: string): boolean => {
   const outDir = path.dirname(outAbs);
   const importPathFor = (file: string) => {
     const relative = path.relative(outDir, path.join(dirAbs, file)).split(path.sep).join('/');
     return relative.startsWith('.') ? relative : `./${relative}`;
   };
-  const code = generateRoutesModule(scanRouteFiles(listFiles(dirAbs)), importPathFor);
-  if (readOrEmpty(outAbs) === code) return false;
-  mkdirSync(outDir, { recursive: true });
-  writeFileSync(outAbs, code);
-  return true;
+  return writeIfChanged(
+    outAbs,
+    generateRoutesModule(scanRouteFiles(listFiles(dirAbs)), importPathFor),
+  );
 };
 
 const isInside = (dir: string, file: string) => {

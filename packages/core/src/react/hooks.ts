@@ -1,7 +1,9 @@
 import { useContext } from 'react';
 
+import type { Href } from '../core/href';
 import type { AppContext, LoaderData } from '../core/types';
 import {
+  type NavigateOptions,
   type NavigationState,
   RequestContextContext,
   RouteIndexContext,
@@ -30,7 +32,8 @@ export const useLocation = (): RouterLocation => useRouterState().location;
 
 export const useNavigation = (): NavigationState => useRouterState().navigation;
 
-export const useNavigate = () => useContext(RouterActionsContext).navigate;
+export const useNavigate = (): ((to: Href, options?: NavigateOptions) => void) =>
+  useContext(RouterActionsContext).navigate;
 
 export const useRevalidate = () => useContext(RouterActionsContext).revalidate;
 

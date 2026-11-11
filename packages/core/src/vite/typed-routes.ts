@@ -1,0 +1,148 @@
+/**
+ * 타입 안전 링크. routes 파일에서 라우트 패턴을 정적으로 뽑아 `Register` 를 확장하는 d.ts 를 만든다.
+ * 리터럴이 아닌 path·children 이 하나라도 있으면 패턴 대신 `routes: string` 을 써서 string 으로 되돌린다.
+ */
+import { joinPath } from '../core/match';
+import { type AstNode, nameOf, parse } from './ast';
+
+export const DEFAULT_ROUTES_DTS = '.ssr-kit/routes.d.ts';
+const ROOT = '/';
+const WRAPPERS = new Set([
+  'TSAsExpression',
+  'TSSatisfiesExpression',
+  'TSNonNullExpression',
+  'ParenthesizedExpression',
+]);
+
+export type RoutePatternsResult = { patterns: string[] } | { reason: string };
+
+class NonLiteralError extends Error {}
+
+/** `x as T`, `x satisfies T`, `(x)`, `defineRoutes(x)` 를 벗긴다 */
+const unwrap = (node: AstNode | null | undefined): AstNode | undefined => {
+  let current = node ?? undefined;
+  while (current) {
+    if (WRAPPERS.has(current.type)) current = current.expression as AstNode;
+    else if (current.type === 'CallExpression' && (current.arguments as AstNode[]).length === 1) {
+      current = (current.arguments as AstNode[])[0];
+    } else return current;
+  }
+  return current;
+};
+
+const topLevelConst = (body: AstNode[], name: string) => {
+  for (const stmt of body) {
+    const declaration =
+      stmt.type === 'ExportNamedDeclaration' ? (stmt.declaration as AstNode) : stmt;
+    if (declaration?.type !== 'VariableDeclaration') continue;
+    for (const declarator of declaration.declarations as AstNode[]) {
+      if (nameOf(declarator.id as AstNode) === name) return declarator.init as AstNode;
+    }
+  }
+  return undefined;
+};
+
+/** default 또는 routes export 의 식 (식별자면 최상위 선언을 따라간다) */
+const findRoutesExpression = (program: AstNode & { body: AstNode[] }) => {
+  for (const stmt of program.body) {
+    if (stmt.type === 'ExportDefaultDeclaration') return stmt.declaration as AstNode;
+    if (stmt.type !== 'ExportNamedDeclaration') continue;
+    const declared = topLevelConst([stmt], 'routes');
+    if (declared) return declared;
+    for (const specifier of (stmt.specifiers as AstNode[]) ?? []) {
+      if (nameOf(specifier.exported as AstNode) === 'routes') return specifier.local as AstNode;
+    }
+  }
+  return undefined;
+};
+
+const resolveArray = (body: AstNode[], node: AstNode | undefined) => {
+  let expression = unwrap(node);
+  if (expression?.type === 'Identifier') {
+    expression = unwrap(topLevelConst(body, expression.name as string));
+  }
+  if (expression?.type !== 'ArrayExpression') {
+    throw new NonLiteralError('라우트 배열이 리터럴이 아니다');
+  }
+  return expression.elements as (AstNode | null)[];
+};
+
+const stringValue = (node: AstNode) => {
+  if (node.type === 'Literal' && typeof node.value === 'string') return node.value;
+  const quasis = node.quasis as AstNode[] | undefined;
+  if (node.type === 'TemplateLiteral' && quasis?.length === 1) {
+    return (quasis[0]!.value as { cooked: string }).cooked;
+  }
+  throw new NonLiteralError('path 가 문자열 리터럴이 아니다');
+};
+
+const readRoute = (node: AstNode | null) => {
+  const route = unwrap(node);
+  if (route?.type !== 'ObjectExpression')
+    throw new NonLiteralError('라우트가 객체 리터럴이 아니다');
+  let routePath: string | undefined;
+  let children: (AstNode | null)[] | undefined;
+  for (const property of route.properties as AstNode[]) {
+    if (property.type !== 'Property' || property.computed) {
+      throw new NonLiteralError('라우트 객체에 spread·계산된 키가 있다');
+    }
+    const key = nameOf(property.key as AstNode);
+    const value = property.value as AstNode;
+    if (key === 'path') routePath = stringValue(value);
+    if (key === 'children') {
+      const array = unwrap(value);
+      if (array?.type !== 'ArrayExpression')
+        throw new NonLiteralError('children 이 배열 리터럴이 아니다');
+      children = array.elements as (AstNode | null)[];
+    }
+  }
+  return { routePath, children };
+};
+
+const normalize = (fullPath: string) => ROOT + fullPath.split('/').filter(Boolean).join('/');
+
+/** match.ts 의 flatten 과 같은 규칙: 자식이 없는 라우트(리프)만 패턴이 된다 */
+const collect = (list: (AstNode | null)[], parentPath: string, out: Set<string>) => {
+  for (const node of list) {
+    const { routePath, children } = readRoute(node);
+    const fullPath = joinPath(parentPath, routePath);
+    if (children?.length) collect(children, fullPath, out);
+    else out.add(normalize(fullPath));
+  }
+};
+
+/** routes 파일 소스 → 전체 라우트 패턴 (정의 순서, 중복 제거) */
+export const extractRoutePatterns = (id: string, code: string): RoutePatternsResult => {
+  const program = parse(id, code);
+  const expression = findRoutesExpression(program);
+  if (!expression) return { reason: 'default 또는 routes export 가 없다' };
+  const patterns = new Set<string>();
+  try {
+    collect(resolveArray(program.body, expression), ROOT, patterns);
+  } catch (error) {
+    if (error instanceof NonLiteralError) return { reason: error.message };
+    throw error;
+  }
+  return { patterns: [...patterns] };
+};
+
+const HEADER = '// ssr-kit 가 생성한 파일. 직접 수정하지 말 것 (ssrKit({ routesDts }))';
+
+/** 패턴 → Register 확장 선언. null 이면 string 으로 되돌리는 선언 */
+export const generateRoutesDts = (patterns: string[] | null) => {
+  let routes: string;
+  if (patterns === null) routes = ' string; // 리터럴이 아닌 라우트가 있어 타입 검사를 끈다';
+  else if (patterns.length === 0) routes = ' never;';
+  else routes = ['', ...patterns.map((p) => `      | ${JSON.stringify(p)}`)].join('\n') + ';';
+  return [
+    HEADER,
+    `import 'ssr-kit';`,
+    '',
+    `declare module 'ssr-kit' {`,
+    '  interface Register {',
+    `    routes:${routes}`,
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+};

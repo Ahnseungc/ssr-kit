@@ -30,7 +30,8 @@ const parseSegment = (raw: string, fullPath: string): Segment => {
   return { kind: 'static', value: raw };
 };
 
-const joinPath = (parent: string, path: string | undefined) => {
+/** 자식 path 를 부모 기준으로 잇는다 (§4.1). `/` 로 시작하면 절대 경로 */
+export const joinPath = (parent: string, path: string | undefined) => {
   if (path === undefined) return parent;
   if (path.startsWith('/')) return path;
   return `${parent.replace(/\/$/, '')}/${path}`;

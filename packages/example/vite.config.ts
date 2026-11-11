@@ -3,5 +3,8 @@ import { ssrKit } from 'ssr-kit/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [react(), ssrKit({ routes: './src/routes.ts', document: './src/Document.tsx' })],
+  plugins: [
+    react(),
+    ssrKit({ routes: './src/routes.ts', document: './src/Document.tsx', routesDts: true }),
+  ],
 });

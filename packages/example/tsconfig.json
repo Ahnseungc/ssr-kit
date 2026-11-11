@@ -4,5 +4,12 @@
     "types": ["node", "vite/client"],
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "e2e", "server.ts", "vite.config.ts", "playwright.config.ts"]
+  "include": [
+    ".ssr-kit/routes.d.ts",
+    "src",
+    "e2e",
+    "server.ts",
+    "vite.config.ts",
+    "playwright.config.ts"
+  ]
 }

@@ -1,11 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { type Manifest, normalizePath, type Plugin, type ResolvedConfig, type Rollup } from 'vite';
 
 import type { AssetManifest } from '../server/build';
+import { writeIfChanged } from './fs-routes';
 import { annotateRoutesFile, type RoutesFileInfo, scanRoutesFile } from './routes';
 import { stripServerExports } from './strip';
+import { DEFAULT_ROUTES_DTS, extractRoutePatterns, generateRoutesDts } from './typed-routes';
 
 export const CLIENT_ENTRY = 'virtual:ssr-kit/client-entry';
 export const SERVER_ENTRY = 'virtual:ssr-kit/server-entry';
@@ -31,6 +34,11 @@ export interface SsrKitPluginOptions {
   document?: string;
   /** 기본 '/_data' */
   dataPrefix?: string;
+  /**
+   * 타입 안전 링크용 d.ts 를 생성한다 (root 기준). true 면 '.ssr-kit/routes.d.ts'.
+   * tsconfig include 에 넣어야 적용된다
+   */
+  routesDts?: boolean | string;
 }
 
 /** createDevServer 가 플러그인 설정을 읽는 통로 */
@@ -113,6 +121,7 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
   let documentFile: string | undefined;
   let hasReactPreamble = false;
   let discovery: Promise<Discovery> | null = null;
+  let routesDtsFile: string | undefined;
 
   const toKey = (file: string) => path.posix.relative(normalizePath(config.root), cleanId(file));
 
@@ -134,6 +143,22 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
       throw error;
     });
     return discovery;
+  };
+
+  /** routes 파일에서 패턴을 뽑아 d.ts 를 쓴다. 실패해도 빌드는 계속한다 */
+  const writeRoutesDts = () => {
+    if (!routesDtsFile) return;
+    try {
+      const result = extractRoutePatterns(routesFile, readFileSync(routesFile, 'utf8'));
+      if ('reason' in result) {
+        config.logger.warn(
+          `${PLUGIN_NAME}: ${options.routes} 에서 라우트 패턴을 뽑지 못해 링크 타입을 string 으로 둔다 (${result.reason})`,
+        );
+      }
+      writeIfChanged(routesDtsFile, generateRoutesDts('reason' in result ? null : result.patterns));
+    } catch (error) {
+      config.logger.warn(`${PLUGIN_NAME}: routes d.ts 생성 실패 (${(error as Error).message})`);
+    }
   };
 
   const importLines = (info: RoutesFileInfo) => {
@@ -241,6 +266,11 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
         ? normalizePath(path.resolve(resolved.root, options.document))
         : undefined;
       hasReactPreamble = resolved.plugins.some((p) => p.name === REACT_PREAMBLE_PLUGIN);
+      if (options.routesDts) {
+        const file = options.routesDts === true ? DEFAULT_ROUTES_DTS : options.routesDts;
+        routesDtsFile = path.resolve(resolved.root, file);
+      }
+      writeRoutesDts();
     },
 
     resolveId(id) {
@@ -281,7 +311,9 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
     },
 
     watchChange(id) {
-      if (cleanId(id) === routesFile) discovery = null;
+      if (cleanId(id) !== routesFile) return;
+      discovery = null;
+      writeRoutesDts();
     },
 
     hotUpdate({ file }) {

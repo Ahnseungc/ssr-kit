@@ -11,6 +11,7 @@ import {
 
 import { toRouteError } from '../core/errors';
 import { mergeHead } from '../core/head';
+import type { Href } from '../core/href';
 import type { DocumentProps, HeadTags, RouteError } from '../core/types';
 import {
   boundaryIndexOf,
@@ -161,7 +162,8 @@ export const Root = ({ Document }: { Document: ComponentType<DocumentProps> }) =
 };
 
 export interface LinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> {
-  to: string;
+  /** Register 로 라우트를 등록하면 등록된 패턴에 맞는 주소만 받는다 */
+  to: Href;
   prefetch?: 'intent' | 'viewport' | 'none';
   replace?: boolean;
   state?: unknown;

@@ -81,6 +81,18 @@ app.listen(3000);
 
 전체 예제는 [packages/example](packages/example).
 
+### 타입 안전 링크
+
+`ssrKit({ routes, routesDts: true })` 가 routes 파일의 라우트 패턴을 `.ssr-kit/routes.d.ts` 로 생성한다.
+tsconfig `include` 에 **파일 경로로** 넣으면(`".ssr-kit/routes.d.ts"`, 점 폴더는 `**/*` 에 안 잡힌다)
+`<Link to>`·`useNavigate()` 가 등록된 경로만 받는다. 넣지 않으면 지금처럼 `string`.
+
+```tsx
+<Link to="/gold/1?tab=a#x" />;            // OK
+<Link to="/gol/1" />;                     // 컴파일 에러
+<Link to={href('/gold/:id', { id })} />;  // 파라미터 인코딩·누락 검사
+```
+
 ## 저장소 구성
 
 | 경로 | 내용 |
@@ -104,12 +116,12 @@ pnpm e2e            # 예제 앱 prod 서버 E2E (Playwright)
 구현: 코드 라우팅·우선순위·params 타입, 병렬 로더·redirect·에러 경계·헤더 병합, 스트리밍 SSR + document hydrate,
 Promise 데이터 스트리밍(`use()`), 데이터 엔드포인트(`/_data/*`), head 병합, 클라 이동·프리패치·스크롤 복원, `ssr: false` 셸,
 Vite 8 Environment API 빌드·dev 서버, 클라 번들 `loader` 제거·`*.server` 차단, 라우트 모듈 Fast Refresh,
-CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), prerender(`ssr-kit-prerender`, HTML + 데이터 JSON),
+CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), 타입 안전 링크(`href`, `routesDts`), prerender(`ssr-kit-prerender`, HTML + 데이터 JSON),
 dev 5xx 에러 Vite 오버레이, 어댑터 Node·Fastify·Hono·Web·Edge(Workers, `node:*` 없음).
 
 | 서브패스 | 내용 |
 |---|---|
-| `ssr-kit` | 라우트 정의·훅·`Link`·`Outlet`·`Head` |
+| `ssr-kit` | 라우트 정의·훅·`Link`·`Outlet`·`Head`·`href` |
 | `ssr-kit/node` | Express·Connect 핸들러 |
 | `ssr-kit/fastify` · `ssr-kit/hono` · `ssr-kit/web` | 프레임워크 어댑터 |
 | `ssr-kit/edge` | Workers·Vercel Edge 용 `Request → Response` (Web 스트림 렌더러) |
