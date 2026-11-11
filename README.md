@@ -6,6 +6,7 @@ Node 서버(Express·Connect·`node:http`)에 미들웨어 하나로 붙는 Reac
 - 서버는 사용자 소유 — 인증·로깅·프록시 미들웨어를 그냥 Express 코드로 쓴다
 - 캐시는 HTTP 헤더로만 — 프레임워크 암묵 캐시 없음, 기본 `Cache-Control: private, no-store`
 - 라우트는 코드로 선언, 로더는 라우트 모듈의 `loader` export (클라 번들에서 자동 제거)
+- 데이터 변경은 `action` export + `<Form>` — JS 없이도 일반 폼 POST 로 동작, hydrate 후엔 문서 새로고침 없이
 - RSC 없이 클래식 SSR + document 전체 hydrate
 
 문서: [PRD](docs/prd/ssr-kit-prd.md) · [기술 스펙](docs/specs/ssr-kit/spec.md)
@@ -105,11 +106,12 @@ pnpm e2e            # 예제 앱 prod 서버 E2E (Playwright)
 Promise 데이터 스트리밍(`use()`), 데이터 엔드포인트(`/_data/*`), head 병합, 클라 이동·프리패치·스크롤 복원, `ssr: false` 셸,
 Vite 8 Environment API 빌드·dev 서버, 클라 번들 `loader` 제거·`*.server` 차단, 라우트 모듈 Fast Refresh,
 CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), prerender(`ssr-kit-prerender`, HTML + 데이터 JSON),
-dev 5xx 에러 Vite 오버레이, 어댑터 Node·Fastify·Hono·Web·Edge(Workers, `node:*` 없음).
+dev 5xx 에러 Vite 오버레이, 어댑터 Node·Fastify·Hono·Web·Edge(Workers, `node:*` 없음),
+데이터 변경 `action`·`<Form>`·`useSubmit`·`useActionData`·`useNavigation().state === 'submitting'`(Origin CSRF 검사, 클라 번들 `action` 제거).
 
 | 서브패스 | 내용 |
 |---|---|
-| `ssr-kit` | 라우트 정의·훅·`Link`·`Outlet`·`Head` |
+| `ssr-kit` | 라우트 정의·훅·`Link`·`Form`·`Outlet`·`Head` |
 | `ssr-kit/node` | Express·Connect 핸들러 |
 | `ssr-kit/fastify` · `ssr-kit/hono` · `ssr-kit/web` | 프레임워크 어댑터 |
 | `ssr-kit/edge` | Workers·Vercel Edge 용 `Request → Response` (Web 스트림 렌더러) |

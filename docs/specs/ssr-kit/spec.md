@@ -172,6 +172,7 @@ export default function GoldDetail() {
 |---|---|---|---|
 | `default` | 서버·클라 | O | 라우트 컴포넌트. 레이아웃은 `<Outlet />` 렌더 |
 | `loader` | **서버 전용** | X | 클라 번들에서 제거 (§6.3) |
+| `action` | **서버 전용** | X | POST·PUT·PATCH·DELETE 처리 (§3.8). 클라 번들에서 제거 |
 | `head` | 서버·클라 | X | 클라 이동·hydrate 시에도 실행 (§5.7) |
 | `ErrorBoundary` | 서버·클라 | X | 이 라우트 이하 로더·렌더 에러 처리 |
 
@@ -184,6 +185,8 @@ export interface SsrRequest {
   method: string;
   headers: Headers;
   raw: unknown;
+  /** 어댑터가 넣는 본문 원천. action 의 request.formData() 등이 쓴다 (§3.8) */
+  readBody?: () => Promise<Uint8Array | ArrayBuffer>;
 }
 
 export interface LoaderArgs<Path extends string = string> {
@@ -221,7 +224,10 @@ export function httpError(status: number, message?: string): never;
 | `useRouteLoaderData<typeof loader>(id)` | 다른(상위) 라우트 데이터 |
 | `useParams()` / `useLocation()` | 현재 매칭 정보 |
 | `useNavigate()` | `navigate(to, { replace?, state? })` |
-| `useNavigation()` | `{ state: 'idle' \| 'loading', location? }` |
+| `useNavigation()` | `{ state: 'idle' \| 'loading' \| 'submitting', location?, formMethod?, formData? }` |
+| `useActionData<typeof action>()` | 마지막 action 반환값. 이동하면 사라짐 (§3.8) |
+| `useSubmit()` | `submit(formData \| URLSearchParams \| Record, { method?, action?, replace? })` |
+| `<Form method action? replace? reloadDocument?>` | 실제 `<form>` 렌더, hydrate 후 제출을 가로챔 (§8.5) |
 | `useRevalidate()` | 현재 로더 재실행 |
 | `useRequestContext()` | 서버: `AppContext`, 클라: `null` |
 | `<Link to prefetch="intent" \| "viewport" \| "none">` | 기본 `"intent"` |
@@ -243,9 +249,11 @@ export interface NodeHandlerOptions {
   getNonce?: (req: IncomingMessage) => string | undefined;
   /** E3 */
   onError?: (error: unknown, info: { url: string; phase: ErrorPhase }) => void;
+  /** action CSRF 검사에서 요청 host 외에 허용할 origin (§3.8) */
+  allowedOrigins?: string[];
 }
 
-export type ErrorPhase = 'loader' | 'shell' | 'stream' | 'data';
+export type ErrorPhase = 'loader' | 'action' | 'shell' | 'stream' | 'data';
 
 export function createSsrHandler(opts: NodeHandlerOptions):
   (req: IncomingMessage, res: ServerResponse, next?: (err?: unknown) => void) => Promise<void>;
@@ -253,7 +261,7 @@ export function getNodeRequest(request: SsrRequest): IncomingMessage;
 ```
 
 - 매칭 라우트가 없으면 `next` 가 있으면 `next()`, 없으면 루트 404 렌더.
-- `GET`·`HEAD` 외 메서드는 `next()` (없으면 405). 문서·데이터 요청은 읽기 전용.
+- `GET`·`HEAD` 외 메서드: 매치된 라우트(또는 상위)에 `action` 이 있으면 처리한다(§5.9). action 이 없거나 매치가 없거나 action 메서드(POST·PUT·PATCH·DELETE)가 아니면 `next()` (없으면 405) — 같은 경로의 사용자 API 라우트가 그대로 동작한다. web·edge·hono 의 `unmatched: 'next'` 도 같다.
 - 정적 파일은 서빙하지 않는다 — 사용자가 `express.static` 등으로.
 
 ### 3.6 사용자 서버 예시 (dev/prod 공용)
@@ -310,6 +318,55 @@ export function render(
 // 클라: ssr-kit/client 의 readSsrData<T>() 로 data 를 읽고 사용자가 직접 hydrateRoot
 ```
 
+### 3.8 데이터 변경 (action)
+
+```tsx
+// src/pages/Guestbook.tsx
+import { type ActionArgs, Form, redirect, useActionData, useNavigation } from 'ssr-kit';
+
+export const action = async ({ request, params, context, headers, signal }: ActionArgs<'/guestbook'>) => {
+  const form = await request.formData();           // json() · text() 도 있음
+  const message = String(form.get('message') ?? '').trim();
+  if (!message) return { error: '내용을 입력해 주세요' }; // → useActionData()
+  await save(message);
+  redirect('/guestbook');                             // 303
+};
+
+export default function Guestbook() {
+  const result = useActionData<typeof action>();
+  const submitting = useNavigation().state === 'submitting';
+  return (
+    <Form method="post">
+      <input name="message" />
+      <button disabled={submitting}>남기기</button>
+      {result?.error}
+    </Form>
+  );
+}
+```
+
+```ts
+export interface ActionRequest extends SsrRequest {
+  formData(): Promise<FormData>;   // urlencoded·multipart
+  json<T = unknown>(): Promise<T>;
+  text(): Promise<string>;
+}
+export interface ActionArgs<Path extends string = string> extends Omit<LoaderArgs<Path>, 'request'> {
+  request: ActionRequest;
+}
+export type ActionData<A> = A extends (...a: never[]) => infer R ? Awaited<R> : never;
+```
+
+- **실행 대상:** 매치 중 `action` 을 export 한 **가장 깊은** 라우트 하나(리프부터 위로).
+- **본문:** 어댑터가 `readBody` 를 넣고, 처음 `formData()`/`json()`/`text()` 를 부를 때 한 번만 읽는다. 이후 호출은 같은 바이트를 다시 해석한다. 런타임별 원천: Node `IncomingMessage` 스트림, web·edge 원본 `Request`, Hono `c.req.raw`, Fastify `request.raw`(플러그인이 캡슐화한 하위 스코프에서 POST 계열 라우트의 content-type 파서를 passthrough 로 바꿔 Fastify 가 본문을 소비·거절하지 않게 한다. 사용자 라우트의 파서는 그대로).
+- 앞선 미들웨어(Express `express.json()` 등)가 본문을 이미 읽었으면 빈 본문이 된다. 그 경우 `getNodeRequest(request).body` 를 쓴다.
+- **CSRF:** `Origin`(없으면 `Referer`)의 host 가 요청 host 와 같아야 한다. 둘 다 없거나 `null` 이면 403. TLS 를 앞단에서 끝내면 요청 URL scheme 이 http 라 origin 전체가 아닌 host 를 비교한다. 프록시가 Host 를 바꾸면 어댑터 옵션 `allowedOrigins: ['https://app.example.com']`.
+- **결과:** 반환값 → `payload.actionData` (로더 데이터와 같은 직렬화기, §7). 성공 후 매치된 로더 **전부**를 다시 실행해 같은 응답에 싣는다(클라가 재검증 요청을 따로 보내지 않음).
+- **redirect:** `redirect()` 의 301·302 는 303 으로 바꾼다(브라우저가 GET 으로 따라감). 307·308 은 의도한 재전송이라 유지.
+- **에러:** `httpError`/일반 Error 는 action 라우트부터 위로 가장 가까운 `ErrorBoundary` 와 그 상태(일반 Error 500, `onError(phase: 'action')`). 이때 로더는 action 라우트 **위쪽만** 실행한다. 더 위쪽 로더가 실패하면 그 에러가 우선.
+- **헤더:** action `headers` 는 로더 헤더 위에 덮어쓴다(`Set-Cookie` 는 append). redirect 응답에도 실린다.
+- 상태 코드는 성공 시 200 고정(검증 실패도 200 + actionData). action 이 상태를 정하는 API 는 v1 에서 보류.
+
 ## 4. 라우트 매칭
 
 ### 4.1 패턴 문법 (RT2)
@@ -360,6 +417,7 @@ export function render(
 ```
 
 - 7 의 로더들은 같은 `AbortController.signal` 을 받는다. 응답 완료 전 `res.on('close')` 시 abort.
+- `GET`·`HEAD` 외 요청은 5 와 6 사이에 §5.9 의 검사·action 실행이 끼고, 7 은 action 성공 뒤에 돈다.
 - `HEAD` 요청은 10 까지 수행 후 본문 없이 종료.
 
 ### 5.2 스트리밍 데이터 (R2)
@@ -424,7 +482,7 @@ type DataResponse =
 - 로더 에러도 `type: 'data'` 의 `payload.error` 로 보낸다(문서 응답과 같은 상태 코드).
 - redirect 는 HTTP 200 + `type: 'redirect'` (fetch 가 자동으로 따라가 문서 HTML 을 받는 걸 막기 위함).
 - 응답 헤더는 §5.4 규칙 그대로. 매치 없으면 404.
-- `GET` 만 허용.
+- `GET` 과 action 메서드(POST·PUT·PATCH·DELETE, §5.9)만 허용. 그 외(HEAD 포함) 405.
 
 ### 5.7 head 병합 (A1)
 
@@ -457,6 +515,24 @@ export const DefaultDocument = ({ children }: DocumentProps) => (
 ```
 - **document 전체를 hydrate** 한다: `hydrateRoot(document, <Root />)`. 서버·클라가 같은 트리(Document 포함)를 렌더하므로 `useId` 가 일치한다(V1).
 - 직렬화 데이터·부트스트랩 스크립트·에셋 프리로드는 React 트리 밖(`bootstrapScriptContent`, `bootstrapModules`, `preloadModule`/`preinit`)으로 출력해 hydrate 비교 대상이 아니다.
+
+### 5.9 action 요청 흐름
+
+```
+1  matches = match(pathname)       없음 → next() 또는 405
+2  modules = await loadModules(matches)
+3  action 있는 가장 깊은 매치 없음, 또는 action 메서드 아님 → next() 또는 405 (데이터 요청은 항상 405)
+4  Origin/Referer 검사 실패 → 403 (action 실행 안 함)
+5  context = await getContext(req)
+6  actionData = await action(args)
+     redirect → 문서: 303 + Location / 데이터: 200 { type: 'redirect', status: 303 }
+     에러     → 위쪽 로더만 실행, 경계 렌더, 그 상태
+7  로더 전부 실행 → payload.actionData = actionData
+8  문서: Document 렌더(200) / 데이터: 200 { type: 'data', payload }
+```
+
+- `ssr: false` 라우트도 action 은 실행한다. redirect 가 아니면 셸을 응답한다(JS 없는 제출의 actionData 는 버려짐).
+- 데이터 요청 POST 는 `POST /_data/<원래 경로>?<쿼리>`. 응답 모양은 §5.6 과 같다.
 
 ## 6. Vite 플러그인 (`ssr-kit/vite`)
 
@@ -500,7 +576,7 @@ export const build = { routes, Document, manifest: /* §6.4 */, dataPrefix: '/_d
 
 client 환경 `transform`(일반 순서 — Vite 내장 TS 변환 이후라 타입 참조가 없다)에서 라우트 모듈에 대해:
 
-1. `oxc-parser` 로 파싱해 `export const loader` / `export function loader` / `export { loader }` 를 제거한다.
+1. `oxc-parser` 로 파싱해 서버 전용 export(`SERVER_EXPORTS = ['loader', 'action']`)의 `export const` / `export function` / `export { … }` 를 제거한다. `__ssrkLoader` 표시는 `loader` 를 지웠을 때만 붙인다(action 만 있는 라우트는 이동 시 데이터 요청이 필요 없음).
 2. export 되지 않은 최상위 선언(함수·클래스·변수, 구조분해·부작용 있는 초기값 포함) 중 **원래는 참조되다가 로더를 지운 뒤 참조가 사라진 것**을 반복 제거한다(고정점까지). 로더 전용 헬퍼·DB 풀·비밀값이 서버 import 를 붙잡아 두는 걸 막기 위함. 처음부터 안 쓰이던 선언(의도된 부작용)은 남긴다.
 3. 참조가 사라진 import 바인딩 제거. 바인딩이 모두 사라진 import 문은 통째로 제거(사이드이펙트 import `import 'x'` 는 유지).
 4. `magic-string` 으로 소스맵 유지.
@@ -573,7 +649,7 @@ export function createDevServer(opts: { root: string; configFile?: string }): Pr
 - 미지원(throw, 경로 표시): 함수, `Symbol`, 위 목록 외 클래스 인스턴스.
 - 형식: 값 테이블 평탄화 + 인덱스 참조. 복원은 `JSON.parse` 후 재구성 — `eval` 없음.
 - 문서 출력: `bootstrapScriptContent` 로 `window.__SSRK=…` 를 넣는다. `<` → `<`, ` `, ` ` 이스케이프.
-- 실어 보내는 값 `SsrPayload`: `{ routes: string[], data: { [routeId]: unknown }, error?: { routeId, error: RouteError }, status }`.
+- 실어 보내는 값 `SsrPayload`: `{ routes: string[], data: { [routeId]: unknown }, error?: { routeId, error: RouteError }, status, actionData? }`.
 - dev 에서 직렬화 결과가 100KB 를 넘으면 콘솔 경고.
 
 ## 8. 클라이언트 런타임 (`ssr-kit/client`)
@@ -632,6 +708,25 @@ navigate(to)
 - 렌더 결과는 일반 `<a href>`. 하이드레이션 전에도 동작.
 - 가로채지 않는 경우: 수정 키(ctrl/meta/shift/alt), 좌클릭 외 버튼, `target` 지정(`_self` 제외), `download`, 다른 origin, `reloadDocument` prop.
 
+### 8.5 Form·submit
+
+```
+submit(target, { method = 'post', action = 현재 경로+쿼리, replace })
+1  method 'get' → 값을 쿼리로 바꿔 navigate (§8.2)
+2  다른 origin → reject
+3  진행 중 네비게이션 abort, navigation = { state: 'submitting', location, formMethod, formData }
+4  병렬: 라우트 모듈 import + fetch(METHOD {dataPrefix}{action}, body)
+     파일이 없으면 URLSearchParams(JS 없는 폼과 같은 urlencoded), 있으면 FormData(multipart)
+5  redirect → §8.2 redirect 처리(GET 데이터 요청, 10번 한도)
+   data     → actionData·로더 데이터로 교체 (추가 revalidate 요청 없음)
+6  기록: action 이 현재 주소면 기록·스크롤 그대로(revalidate 와 같음), 아니면 push(replace 면 replace)
+```
+
+- 네트워크 실패 시 `navigation` 을 idle 로 돌리고 `submit()` Promise 가 reject 한다. POST 는 문서 이동으로 재시도할 수 없어서다. `<Form>` 은 콘솔 에러로 남긴다.
+- 제출 중 `navigate` 가 오면 submit 요청을 abort 하고 늦게 온 응답은 버린다(서버에서 action 은 이미 실행됐을 수 있다).
+- `<Form>` 은 `method` 가 get 이 아니면 `method="post"` 로 렌더해 JS 없이도 POST 로 제출된다(put·patch·delete 는 JS 없이는 POST). 가로채지 않는 경우: `reloadDocument`, `onSubmit` 에서 `preventDefault`, `target`/`formtarget` 이 `_self` 아님, 다른 origin `action`/`formaction`.
+- 누른 버튼의 `name`/`value` 를 FormData 에 붙인다(`new FormData(form, submitter)` 는 구형 WebView 에 없어 직접 append). `formaction`·`formmethod` 도 반영.
+
 ## 9. 어댑터
 
 | 어댑터 | 시그니처 | 단계 |
@@ -669,6 +764,8 @@ export interface RenderSink {
 | 직렬화 XSS | §7 이스케이프, 직렬화 결과를 `innerHTML` 로 쓰지 않음 |
 | 로더 코드 유출 | §6.3 제거 + `*.server`·`/server/` 차단 |
 | 상위 로더 인증 우회 | 데이터 요청도 매치 로더 전부 실행 (§5.6) |
+| CSRF (action) | Origin/Referer host 검사, 실패 시 403 (§3.8). 쿠키 `SameSite` 는 사용자 몫 |
+| action 코드 유출 | §6.3 이 `loader` 와 같이 제거 |
 | 에러 메시지 노출 | prod 에서 일반 Error 메시지·스택 미전송 (§5.5) |
 | 개인화 HTML 캐시 | 기본 `Cache-Control: private, no-store` (§5.4) |
 | CSP | `getNonce` → `nonce` 옵션 (부트스트랩·데이터 스크립트) |
@@ -717,4 +814,4 @@ export interface RenderSink {
 
 1. ~~기본 `isBot` 정규식 범위~~ → 크롤러 토큰만(`xxxbot/`, `Yeti`, `Daumoa`, `kakaotalk-scrap` 등). `naver`·`daum` 은 인앱 브라우저 실사용자 UA 에도 있어 쓰지 않는다.
 2. 루트 404 커스텀 — `path: '*'` 라우트로 충분한지.
-3. `useNavigation` mutation 확장 — v1 비목표라 보류.
+3. ~~`useNavigation` mutation 확장~~ → `action`·`<Form>`·`submitting` 상태로 구현 (§3.8, §5.9, §8.5).
