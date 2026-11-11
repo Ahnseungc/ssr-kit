@@ -24,7 +24,7 @@ export interface RenderOptions {
 
 type RenderBuild = Pick<
   ServerBuild,
-  'bootstrapModules' | 'resolveAssets' | 'dev' | 'fixStacktrace'
+  'bootstrapModules' | 'resolveAssets' | 'dev' | 'fixStacktrace' | 'tailHtml'
 >;
 
 const DEFAULT_RENDER_TIMEOUT_MS = 10_000;
@@ -58,6 +58,7 @@ export const render = async (
     data: options.data ?? null,
     dev: build.dev,
     nonce: options.nonce,
+    tailHtml: build.tailHtml?.(options.nonce),
     isBot: options.isBot ?? false,
     renderTimeout: options.renderTimeout ?? DEFAULT_RENDER_TIMEOUT_MS,
     report,

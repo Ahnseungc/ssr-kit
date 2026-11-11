@@ -121,7 +121,8 @@ Vite 8 Environment API 빌드·dev 서버, 클라 번들 `loader` 제거·`*.ser
 CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), 타입 안전 링크(`href`, `routesDts`), prerender(`ssr-kit-prerender`, HTML + 데이터 JSON),
 dev 5xx 에러 Vite 오버레이, 어댑터 Node·Fastify·Hono·Web·Edge(Workers, `node:*` 없음),
 라우트 미들웨어(문서·데이터·action 요청 모두, 클라 번들 제거), Server-Timing·`onTiming`,
-데이터 변경 `action`·`<Form>`·`useSubmit`·`useActionData`·`useNavigation().state === 'submitting'`(Origin CSRF 검사, 클라 번들 `action` 제거).
+데이터 변경 `action`·`<Form>`·`useSubmit`·`useActionData`·`useNavigation().state === 'submitting'`(Origin CSRF 검사, 클라 번들 `action` 제거),
+`@vitejs/plugin-legacy` 연동(구형 Android WebView 용 nomodule 번들을 문서 끝에 붙임, 스펙 §6.6.1).
 
 | 서브패스 | 내용 |
 |---|---|

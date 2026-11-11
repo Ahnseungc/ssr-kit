@@ -78,6 +78,21 @@ describe('클라 라우터', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it('같은 문서의 해시 링크는 데이터를 프리패치하지 않는다', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => json(dataBody('/a', 1)));
+    const router = createClientRouter({
+      routes,
+      dataPrefix: '/_data',
+      initialState: initialState('/page'),
+    });
+    router.actions.prefetch('#memo', true);
+    router.actions.prefetch('/a#memo', true);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('/_data/a');
+  });
+
   it('진행 중인 이동이 있으면 revalidate 가 그 이동을 끊지 않는다', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));

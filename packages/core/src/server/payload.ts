@@ -16,6 +16,10 @@ export interface Outcome {
 
 const escapeAttribute = (value: string) => value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
+/** 서버가 붙이는 <script> 의 nonce 속성 (앞 공백 포함) */
+export const nonceAttribute = (nonce?: string) =>
+  nonce ? ` nonce="${escapeAttribute(nonce)}"` : '';
+
 const DEV_PAYLOAD_WARN_BYTES = 100 * 1024;
 
 /** 문서용: Promise 에 id 를 붙여 직렬화하고 부트스트랩 스크립트를 만든다 */
@@ -85,8 +89,7 @@ const encodeOutcome = (outcome: Outcome, options: SettleScriptOptions) => {
 /** settle 결과를 클라 __SSRKR 호출 스크립트로 */
 export const settleScript = (id: number, outcome: Outcome, options: SettleScriptOptions) => {
   const { ok, json } = encodeOutcome(outcome, options);
-  const attribute = options.nonce ? ` nonce="${escapeAttribute(options.nonce)}"` : '';
-  return `<script${attribute}>__SSRKR(${id},${ok ? 1 : 0},${escapeForScript(json)})</script>`;
+  return `<script${nonceAttribute(options.nonce)}>__SSRKR(${id},${ok ? 1 : 0},${escapeForScript(json)})</script>`;
 };
 
 export interface SettledPayloadOptions {

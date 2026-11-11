@@ -724,6 +724,19 @@ export function createDevServer(opts: { root: string; configFile?: string }): Pr
 
 플러그인은 `build.target` 을 건드리지 않는다. 클라 런타임은 ES2020 문법 + `fetch`, `AbortController`, `history.pushState`, `IntersectionObserver`(없으면 viewport 프리패치 비활성)만 쓴다. Navigation API·`structuredClone` 미사용.
 
+#### 6.6.1 구형 WebView·ES 모듈 미지원 브라우저 (`@vitejs/plugin-legacy`)
+
+사용자 Vite 설정에 `@vitejs/plugin-legacy` 가 있으면(플러그인 이름 `vite:legacy-post-process` 로 감지) 클라 빌드가 모던 청크와 함께 SystemJS 레거시 청크·폴리필을 낸다. 플러그인은 그 스크립트를 `index.html` 에만 넣고 React 는 `nomodule` 스크립트를 낼 수 없으므로, ssr-kit 이 같은 태그를 만든다.
+
+- 서버 엔트리 빌드 때 client 매니페스트에서 모던 엔트리·레거시 엔트리(`<엔트리 키>-legacy`)·레거시 폴리필(`vite/legacy-polyfills-legacy`)·모던 폴리필(`vite/legacy-polyfills`)을 찾는다. 가상 모듈 키는 root 가 cwd 와 다르면 앞에 상대 경로가 붙어 끝부분으로 찾는다. 레거시 청크도 `isEntry` 라 부트스트랩·프리로드는 반드시 모던 엔트리로 고른다.
+- `ServerBuild.tailHtml?: (nonce?: string) => string`. 빌드 때 태그를 nonce 자리로 나눈 조각으로 저장하고(`createTailHtml(parts)`), 요청마다 nonce 를 이스케이프해 모든 `<script>` 에 넣는다. 태그(base 접두사 포함)는 plugin-legacy 8.2.4 와 같다: Safari 10.1 nomodule 수정 → `<script nomodule crossorigin id="vite-legacy-polyfill" src>` → `<script nomodule crossorigin id="vite-legacy-entry" data-src>System.import(…)` → 모던 감지 `type="module"` 인라인 → 동적 import 폴백 `type="module"` 인라인. 인라인 코드는 플러그인이 export 하지 않아(`cspHashes` 만 export) 옮겨 왔고, 단위 테스트가 설치된 버전의 `cspHashes` 와 sha256 을 대조한다.
+- 감지·폴백 스크립트는 plugin-legacy 가 `<head>` 에 넣지만 인라인 모듈(defer)이라 위치와 관계없이 파싱이 끝난 뒤 순서대로 돈다. 모던 브라우저는 `nomodule` 을 건너뛰고 감지 스크립트가 `__vite_is_modern_browser` 를 켜 폴백도 아무것도 안 한다. 모듈은 되지만 `import.meta.resolve`·동적 import 가 없는 브라우저는 모던 엔트리 맨 앞의 legacy guard import 가 throw 해 모던 번들이 실행되지 않고 폴백이 레거시 번들을 띄운다. 그래서 hydrate 는 한 번이다.
+- 붙이는 위치: Node(`DeferredWriter._final`)·edge(`appendDeferred` flush) 모두 React 출력이 끝난 직후, 아직 settle 되지 않은 Promise 의 스크립트보다 먼저 한 번. React 가 끝난 시점이 `</html>` 뒤 태그 경계가 보장되는 유일한 때이고, 레거시 브라우저가 느린 Promise 를 기다리지 않고 바로 hydrate 를 시작하게 하려는 것(모던은 부트스트랩 모듈이 셸에 있어 원래 기다리지 않는다). 늦게 오는 settle 스크립트는 인라인 부트스트랩의 `__SSRKQ` 큐가 받는다. `render()`(RT6)·봇 모드·prerender 에도 붙고, HEAD 응답에는 없다.
+- `modernPolyfills` 청크는 `bootstrapModules` 의 엔트리 앞에 둔다. React 는 부트스트랩 모듈을 `async` 로 내므로 폴리필이 엔트리보다 먼저 실행된다는 보장은 없다(한계).
+- `renderModernChunks: false` 는 지원하지 않는다(빌드 에러). dev 는 plugin-legacy 가 빌드 전용이라 영향이 없다.
+- plugin-legacy 는 환경별 설정마다 설정 파일을 다시 읽어 새 인스턴스를 만들어야 동작한다. `createBuilder({ configFile: false, plugins: [legacy()] })` 처럼 인라인으로 넘기면 인스턴스가 client·ssr 설정에 공유돼 레거시 폴리필이 안 만들어진다(plugin-legacy 쪽 동작). 이때 ssr-kit 은 원인을 담은 빌드 에러를 낸다.
+- CSP: 모던 엔트리의 legacy guard 가 `data:` URL 을 import 하므로 `script-src` 에 `data:` 가 필요할 수 있다(plugin-legacy 와 같은 조건).
+
 ## 7. 직렬화 (D3)
 
 자체 구현, 의존성 0.
@@ -777,6 +790,7 @@ navigate(to)
 - 데이터 요청 네트워크 에러 → `location.assign(to)`.
 - 데이터 캐시 없음(G2). `intent` 프리패치 결과는 직후 1회 네비게이션에 한해 재사용(10초 이내).
 - 프리패치 항목은 모듈 로드를 기다리지 않고 즉시 등록한다. 클릭은 mousedown 의 focus 프리패치 직후에 오므로, 늦게 등록하면 같은 데이터를 두 번 요청한다.
+- 같은 문서의 해시 링크(경로·쿼리 같고 해시만 다름)는 이동 때 데이터를 받지 않으므로 프리패치도 하지 않는다.
 
 ### 8.3 프리패치 (RT4)
 
@@ -854,7 +868,7 @@ export interface RenderSink {
 | action 코드 유출 | §6.3 이 `loader` 와 같이 제거 |
 | 에러 메시지 노출 | prod 에서 일반 Error 메시지·스택 미전송 (§5.5) |
 | 개인화 HTML 캐시 | 기본 `Cache-Control: private, no-store` (§5.4) |
-| CSP | `getNonce` → `nonce` 옵션 (부트스트랩·데이터 스크립트) |
+| CSP | `getNonce` → `nonce` 옵션 (부트스트랩·데이터·plugin-legacy 스크립트) |
 | 오픈 리다이렉트 | `redirect()` 는 값 검증 안 함 — 문서화. 클라는 다른 origin 이면 `location.assign` |
 | 경로 조작 | `decodeURIComponent` 실패 시 400 |
 

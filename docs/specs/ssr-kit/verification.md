@@ -89,7 +89,7 @@
 - strip 은 `export * from './x'` 로 다시 내보낸 `loader` 와 섀도잉된 이름은 처리하지 않는다(보수적으로 남김). 서버 전용 코드는 `*.server.ts` 로 분리하는 걸 권장한다.
 - 문서 스트리밍에서 settle 된 값 안의 중첩 Promise 는 지원하지 않는다(reject 로 보냄). 데이터 엔드포인트는 지원한다.
 
-- `@vitejs/plugin-legacy`(nomodule SystemJS 번들)는 지원하지 않는다. ES 모듈을 못 쓰는 브라우저(Chrome 61 미만)는 대상 밖. `build.target` 으로 문법 변환은 된다.
+- `@vitejs/plugin-legacy` 는 지원한다(스펙 §6.6.1). 검증 범위: 태그 미러는 설치된 플러그인의 `cspHashes` 대조, 붙는 위치·nonce·HEAD 는 Node·edge 단위, 모던 Chromium 에서 레거시 번들 미요청·hydrate 1회 E2E, nomodule 브라우저는 HTML 에서 모듈 스크립트·modulepreload 를 빼고 `nomodule` 을 지운 문서로 Chromium 이 SystemJS 레거시 번들만으로 hydrate·클라 이동하는 것까지 E2E. 실제 구형 엔진(Android 5 WebView·Chrome 49)과 "모듈은 되지만 동적 import 가 없는" 브라우저의 폴백 경로는 실기기로 확인하지 않았다. `modernPolyfills` 는 엔트리보다 먼저 실행된다는 보장이 없다. `renderModernChunks: false` 는 미지원.
 - `ssr-kit/edge`·Hono 는 Promise 데이터의 settle 스크립트를 응답 끝에 붙인다(스펙 §9). Promise 데이터를 쓰는 Suspense 경계의 hydrate 가 응답 끝까지 늦어진다.
 - prerender 데이터 JSON 은 정적 호스팅에서 rewrite 설정이 필요하다(스펙 §6.8).
 - 성능 벤치(TTFB 오버헤드, dev cold start)는 아직 측정하지 않았다.

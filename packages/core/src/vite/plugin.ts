@@ -6,6 +6,7 @@ import { type Manifest, normalizePath, type Plugin, type ResolvedConfig, type Ro
 
 import type { AssetManifest } from '../server/build';
 import { writeIfChanged } from './fs-routes';
+import { findLegacyAssets, findManifestKey, LEGACY_PLUGIN_NAME, legacyTailParts } from './legacy';
 import { annotateRoutesFile, type RoutesFileInfo, scanRoutesFile } from './routes';
 import { stripServerExports } from './strip';
 import { DEFAULT_ROUTES_DTS, extractRoutePatterns, generateRoutesDts } from './typed-routes';
@@ -82,6 +83,8 @@ if (import.meta.hot) {
   map: null,
 });
 
+const findEntryKey = (manifest: Manifest) => findManifestKey(manifest, CLIENT_ENTRY);
+
 const toAssetManifest = (manifest: Manifest, keys: Iterable<string>): AssetManifest => {
   const flatten = (key: string, seen = new Set<string>()) => {
     const files: string[] = [];
@@ -100,7 +103,9 @@ const toAssetManifest = (manifest: Manifest, keys: Iterable<string>): AssetManif
     return { files, css };
   };
 
-  const entryKey = Object.keys(manifest).find((key) => manifest[key]!.isEntry);
+  // plugin-legacy 를 쓰면 레거시 엔트리·폴리필도 isEntry 라 모던 엔트리를 먼저 찾는다
+  const entryKey =
+    findEntryKey(manifest) ?? Object.keys(manifest).find((key) => manifest[key]!.isEntry);
   if (!entryKey) throw new Error('client 매니페스트에 엔트리가 없다');
   const entry = flatten(entryKey);
 
@@ -120,6 +125,7 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
   let routesFile = '';
   let documentFile: string | undefined;
   let hasReactPreamble = false;
+  let hasLegacy = false;
   let discovery: Promise<Discovery> | null = null;
   let routesDtsFile: string | undefined;
 
@@ -201,11 +207,28 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
       await readFile(path.join(outDir, '.vite/manifest.json'), 'utf8'),
     ) as Manifest;
     const assets = toAssetManifest(manifest, discovered.keys.values());
+    const base = JSON.stringify(config.base);
+    if (!hasLegacy) {
+      return [
+        `import { createManifestAssets } from 'ssr-kit/server';`,
+        ...lines,
+        `const manifest = ${JSON.stringify(assets)};`,
+        `export const build = { ${common}, dev: false, ...createManifestAssets(manifest, ${base}) };`,
+      ].join('\n');
+    }
+    const legacy = findLegacyAssets(manifest, findEntryKey(manifest));
+    // 모던 폴리필은 엔트리 앞에 둔다. React 는 부트스트랩 모듈을 async 로 내므로 실행 순서는 보장되지 않는다
+    const modernPolyfills = legacy.modernPolyfills
+      ? [`${config.base}${legacy.modernPolyfills}`]
+      : [];
     return [
-      `import { createManifestAssets } from 'ssr-kit/server';`,
+      `import { createManifestAssets, createTailHtml } from 'ssr-kit/server';`,
       ...lines,
       `const manifest = ${JSON.stringify(assets)};`,
-      `export const build = { ${common}, dev: false, ...createManifestAssets(manifest, ${JSON.stringify(config.base)}) };`,
+      `const assets = createManifestAssets(manifest, ${base});`,
+      `export const build = { ${common}, dev: false, ...assets,`,
+      `  bootstrapModules: [...${JSON.stringify(modernPolyfills)}, ...assets.bootstrapModules],`,
+      `  tailHtml: createTailHtml(${JSON.stringify(legacyTailParts(legacy, config.base))}) };`,
     ].join('\n');
   };
 
@@ -271,6 +294,7 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
         routesDtsFile = path.resolve(resolved.root, file);
       }
       writeRoutesDts();
+      hasLegacy = resolved.plugins.some((p) => p.name === LEGACY_PLUGIN_NAME);
     },
 
     resolveId(id) {

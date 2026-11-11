@@ -32,6 +32,7 @@ const streamTree = (target: NodeTarget, tree: ReactNode, options: TreeRenderOpti
       entries,
       dev: options.dev,
       nonce: options.nonce,
+      tail: options.tailHtml,
       timeoutMs: options.renderTimeout,
       onError: (error) => options.report('stream', error),
     });

@@ -6,6 +6,7 @@ Node 서버(Express·Connect·`node:http`)에 미들웨어 하나로 붙는 Reac
 - 서버는 사용자 소유 — 인증·로깅·프록시 미들웨어를 그냥 Express 코드로 쓴다
 - 캐시는 HTTP 헤더로만 — 프레임워크 암묵 캐시 없음, 기본 `Cache-Control: private, no-store`
 - 라우트는 코드로 선언, 로더는 라우트 모듈의 `loader` export (클라 번들에서 자동 제거)
+- 라우트 `middleware` export(onion, 로더 전 실행 — 인증 가드) · `Server-Timing` 헤더(dev 기본)
 - 데이터 변경은 `action` export + `<Form>` — JS 없이도 일반 폼 POST 로 동작, hydrate 후엔 문서 새로고침 없이
 - RSC 없이 클래식 SSR + document 전체 hydrate
 
@@ -120,7 +121,8 @@ Vite 8 Environment API 빌드·dev 서버, 클라 번들 `loader` 제거·`*.ser
 CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), 타입 안전 링크(`href`, `routesDts`), prerender(`ssr-kit-prerender`, HTML + 데이터 JSON),
 dev 5xx 에러 Vite 오버레이, 어댑터 Node·Fastify·Hono·Web·Edge(Workers, `node:*` 없음),
 라우트 미들웨어(문서·데이터·action 요청 모두, 클라 번들 제거), Server-Timing·`onTiming`,
-데이터 변경 `action`·`<Form>`·`useSubmit`·`useActionData`·`useNavigation().state === 'submitting'`(Origin CSRF 검사, 클라 번들 `action` 제거).
+데이터 변경 `action`·`<Form>`·`useSubmit`·`useActionData`·`useNavigation().state === 'submitting'`(Origin CSRF 검사, 클라 번들 `action` 제거),
+`@vitejs/plugin-legacy` 연동(구형 Android WebView 용 nomodule 번들을 문서 끝에 붙임, 스펙 §6.6.1).
 
 | 서브패스 | 내용 |
 |---|---|
