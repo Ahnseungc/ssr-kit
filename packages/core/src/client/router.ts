@@ -196,7 +196,8 @@ export const createClientRouter = ({
 
   const prefetch = (to: string, withData: boolean) => {
     const url = new URL(to, window.location.href);
-    if (url.origin !== window.location.origin) return;
+    // 같은 문서의 해시 링크는 이동해도 데이터를 받지 않는다 (focus 프리패치가 /_data 를 부르던 문제)
+    if (url.origin !== window.location.origin || isHashOnly(url, 'push')) return;
     const matches = safeMatch(url.pathname);
     if (!matches) return;
     const modules = loadModules(matches);
