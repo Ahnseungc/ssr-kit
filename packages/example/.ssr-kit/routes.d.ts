@@ -12,6 +12,8 @@ declare module 'ssr-kit' {
       | "/stream"
       | "/external"
       | "/query"
+      | "/admin"
+      | "/login"
       | "/shell";
   }
 }
