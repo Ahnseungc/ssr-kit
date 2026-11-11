@@ -1,5 +1,5 @@
 // pnpm typecheck 가 검사하는 타입 테스트. 런타임에 import 되지 않는다
-import { href, type Href, type LinkProps, useNavigate } from 'ssr-kit';
+import { type Href, href, type LinkProps, useNavigate } from 'ssr-kit';
 
 const valid: Href[] = ['/', '/gold/1', '/gold/1?tab=a#x', '/about', '#memo', 'https://example.com'];
 

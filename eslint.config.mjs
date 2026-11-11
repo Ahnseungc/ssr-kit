@@ -6,7 +6,7 @@ import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/node_modules/', '**/dist/', '**/coverage/', '**/test-results/'] },
+  { ignores: ['**/node_modules/', '**/dist/', '**/coverage/', '**/test-results/', '.claude/'] },
   js.configs.recommended,
   tseslint.configs.recommended,
   prettier,
