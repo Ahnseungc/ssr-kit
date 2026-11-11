@@ -6,11 +6,11 @@
 **이미 있는 Node 서버에 미들웨어 하나로 붙는 React 19 스트리밍 SSR. Vite 8 기반이고 프레임워크에 묶이지 않습니다.**
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Ahnseungc/ssr-kit/main/docs/assets/demo.gif" width="400" alt="ssr-kit 데모: 페이지 셸이 먼저 그려지고 차트가 스트리밍으로 채워진 뒤, 폼이 새로고침 없이 제출되고, 라우트 미들웨어가 관리자 페이지 전에 로그인으로 보냅니다" />
+  <a href="https://ssr-kit-demo.omnipo58-e94.workers.dev/stream?delay=1500"><img src="https://raw.githubusercontent.com/Ahnseungc/ssr-kit/main/docs/assets/demo.gif" width="400" alt="ssr-kit 데모: 페이지 셸이 먼저 그려지고 차트가 스트리밍으로 채워진 뒤, 폼이 새로고침 없이 제출되고, 라우트 미들웨어가 관리자 페이지 전에 로그인으로 보냅니다" /></a>
 </p>
 
 <p align="center">
-  <b><a href="#데모-실행">데모 실행 →</a></b> (Express, 또는 로컬 Cloudflare Workers)
+  <b><a href="https://ssr-kit-demo.omnipo58-e94.workers.dev/stream?delay=1500">라이브 데모 →</a></b> (Cloudflare Workers 에 올린 예제 앱)
 </p>
 
 ## 왜 만들었나
@@ -292,7 +292,7 @@ pnpm --filter ssr-kit-example start      # Express → http://localhost:3000
 pnpm --filter ssr-kit-example demo:dev   # Cloudflare Workers(로컬) → http://localhost:4600
 ```
 
-`/stream?delay=2000` 을 열면 셸이 데이터보다 먼저 오는 걸 볼 수 있습니다. 위 GIF 는 `node packages/example/scripts/record-demo.mjs` 로 녹화합니다.
+같은 앱이 [ssr-kit-demo.omnipo58-e94.workers.dev](https://ssr-kit-demo.omnipo58-e94.workers.dev) 에 올라가 있습니다(`pnpm --filter ssr-kit-example demo:deploy`). `/stream?delay=2000` 을 열면 셸이 데이터보다 먼저 오는 걸 볼 수 있습니다. 위 GIF 는 `node packages/example/scripts/record-demo.mjs` 로 녹화합니다.
 
 ## 기여
 

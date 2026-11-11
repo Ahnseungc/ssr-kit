@@ -6,11 +6,11 @@
 **React 19 streaming SSR as one middleware for the Node server you already have. Built with Vite 8, no framework lock-in.**
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Ahnseungc/ssr-kit/main/docs/assets/demo.gif" width="400" alt="ssr-kit demo: the page shell renders first and a chart streams in, a form posts without a page reload, and a route middleware redirects to login before the admin page" />
+  <a href="https://ssr-kit-demo.omnipo58-e94.workers.dev/stream?delay=1500"><img src="https://raw.githubusercontent.com/Ahnseungc/ssr-kit/main/docs/assets/demo.gif" width="400" alt="ssr-kit demo: the page shell renders first and a chart streams in, a form posts without a page reload, and a route middleware redirects to login before the admin page" /></a>
 </p>
 
 <p align="center">
-  <b><a href="#run-the-demo">Run the demo →</a></b> (Express, or Cloudflare Workers locally)
+  <b><a href="https://ssr-kit-demo.omnipo58-e94.workers.dev/stream?delay=1500">Live demo →</a></b> (the example app on Cloudflare Workers)
 </p>
 
 ## Why
@@ -292,7 +292,7 @@ pnpm --filter ssr-kit-example start      # Express → http://localhost:3000
 pnpm --filter ssr-kit-example demo:dev   # Cloudflare Workers (local) → http://localhost:4600
 ```
 
-Open `/stream?delay=2000` to watch the shell arrive before the data. `node packages/example/scripts/record-demo.mjs` records the GIF above.
+The same app runs at [ssr-kit-demo.omnipo58-e94.workers.dev](https://ssr-kit-demo.omnipo58-e94.workers.dev) (`pnpm --filter ssr-kit-example demo:deploy`). Open `/stream?delay=2000` to watch the shell arrive before the data. `node packages/example/scripts/record-demo.mjs` records the GIF above.
 
 ## Contributing
 
