@@ -12,7 +12,8 @@ const isSameDocument = (page: Page) =>
   page.evaluate(() => (window as unknown as { __mark?: boolean }).__mark === true);
 
 /** 병렬 테스트가 같은 메모리 방명록을 쓰므로 글마다 고유하게 */
-const uniqueMessage = (label: string) => `${label}-${Date.now().toString(36)}`;
+const uniqueMessage = (label: string) =>
+  `${label}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 const ACTION_DELAY_MS = 400;
 
@@ -42,7 +43,9 @@ test('JS 제출: 문서를 다시 받지 않고 submitting 상태를 보여 준 
   await expect(pending).toBeVisible();
   await expect(pending).toBeDisabled();
 
-  await expect(page.getByTestId('guestbook-entries').getByText(message)).toBeVisible();
+  await expect(
+    page.getByTestId('guestbook-entries').getByText(message, { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole('button', { name: '남기기' })).toBeEnabled();
   // redirect 로 돌아오면 폼이 비워진다
   await expect(page.getByLabel('한마디')).toHaveValue('');
@@ -89,7 +92,9 @@ test.describe('JS 없이 (progressive enhancement)', () => {
       page.getByRole('button', { name: '남기기' }).click(),
     ]);
     expect(response.status()).toBe(303);
-    await expect(page.getByTestId('guestbook-entries').getByText(message)).toBeVisible();
+    await expect(
+      page.getByTestId('guestbook-entries').getByText(message, { exact: true }),
+    ).toBeVisible();
     await expect(page).toHaveURL('/guestbook');
   });
 

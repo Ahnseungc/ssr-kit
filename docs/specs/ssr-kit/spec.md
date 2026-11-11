@@ -280,7 +280,7 @@ export function getNodeRequest(request: SsrRequest): IncomingMessage;
 ```
 
 - 매칭 라우트가 없으면 `next` 가 있으면 `next()`, 없으면 루트 404 렌더.
-- `GET`·`HEAD` 외 메서드: 매치된 라우트(또는 상위)에 `action` 이 있으면 처리한다(§5.9). action 이 없거나 매치가 없거나 action 메서드(POST·PUT·PATCH·DELETE)가 아니면 `next()` (없으면 405) — 같은 경로의 사용자 API 라우트가 그대로 동작한다. web·edge·hono 의 `unmatched: 'next'` 도 같다.
+- `GET`·`HEAD` 외 메서드: 매치된 라우트(또는 상위)에 `action` 이 있으면 처리한다(§5.11). action 이 없거나 매치가 없거나 action 메서드(POST·PUT·PATCH·DELETE)가 아니면 `next()` (없으면 405) — 같은 경로의 사용자 API 라우트가 그대로 동작한다. web·edge·hono 의 `unmatched: 'next'` 도 같다.
 - 정적 파일은 서빙하지 않는다 — 사용자가 `express.static` 등으로.
 
 ### 3.6 사용자 서버 예시 (dev/prod 공용)
@@ -467,8 +467,8 @@ export function href<P extends RoutePattern>(pattern: P, params?: Params<P>): Hr
 13 renderTimeout 후 abort() — 미완료 Suspense 는 클라 렌더로 넘어감
 ```
 
-- 7 의 로더들은 같은 `AbortController.signal` 을 받는다. 응답 완료 전 `res.on('close')` 시 abort.
-- `GET`·`HEAD` 외 요청은 5 와 6 사이에 §5.9 의 검사·action 실행이 끼고, 7 은 action 성공 뒤에 돈다.
+- 8 의 로더들은 같은 `AbortController.signal` 을 받는다. 응답 완료 전 `res.on('close')` 시 abort.
+- `GET`·`HEAD` 외 요청은 5 와 6 사이에 §5.11 의 검사(405·403)가 끼고, 7 의 맨 안쪽에서 **action → 로더** 순서로 돈다. 미들웨어가 action 도 감싸므로 인증 가드를 우회할 수 없다.
 - `HEAD` 요청은 10 까지 수행 후 본문 없이 종료.
 
 ### 5.2 스트리밍 데이터 (R2)
@@ -535,7 +535,7 @@ type DataResponse =
 - 로더 에러도 `type: 'data'` 의 `payload.error` 로 보낸다(문서 응답과 같은 상태 코드).
 - redirect 는 HTTP 200 + `type: 'redirect'` (fetch 가 자동으로 따라가 문서 HTML 을 받는 걸 막기 위함).
 - 응답 헤더는 §5.4 규칙 그대로. 매치 없으면 404.
-- `GET` 과 action 메서드(POST·PUT·PATCH·DELETE, §5.9)만 허용. 그 외(HEAD 포함) 405.
+- `GET` 과 action 메서드(POST·PUT·PATCH·DELETE, §5.11)만 허용. 그 외(HEAD 포함) 405.
 
 ### 5.7 head 병합 (A1)
 
@@ -900,4 +900,4 @@ export interface RenderSink {
 
 1. ~~기본 `isBot` 정규식 범위~~ → 크롤러 토큰만(`xxxbot/`, `Yeti`, `Daumoa`, `kakaotalk-scrap` 등). `naver`·`daum` 은 인앱 브라우저 실사용자 UA 에도 있어 쓰지 않는다.
 2. 루트 404 커스텀 — `path: '*'` 라우트로 충분한지.
-3. ~~`useNavigation` mutation 확장~~ → `action`·`<Form>`·`submitting` 상태로 구현 (§3.8, §5.9, §8.5).
+3. ~~`useNavigation` mutation 확장~~ → `action`·`<Form>`·`submitting` 상태로 구현 (§3.8, §5.11, §8.5).

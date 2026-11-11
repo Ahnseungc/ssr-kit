@@ -14,6 +14,7 @@ declare module 'ssr-kit' {
       | "/query"
       | "/admin"
       | "/login"
+      | "/guestbook"
       | "/shell";
   }
 }
