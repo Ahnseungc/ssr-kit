@@ -11,9 +11,16 @@ export interface RouterLocation {
   state?: unknown;
 }
 
+export type FormMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
+
 export interface NavigationState {
-  state: 'idle' | 'loading';
+  /** submitting: action 요청 중, loading: 데이터·모듈 로드 중 */
+  state: 'idle' | 'loading' | 'submitting';
   location?: string;
+  /** submitting 일 때 대문자 메서드 (POST 등) */
+  formMethod?: string;
+  /** submitting 일 때 보낸 값 */
+  formData?: FormData;
 }
 
 export interface RouterState {
@@ -30,10 +37,22 @@ export interface NavigateOptions {
   state?: unknown;
 }
 
+export interface SubmitOptions {
+  /** 기본 'post' */
+  method?: FormMethod;
+  /** 보낼 경로. 기본: 현재 경로+쿼리 */
+  action?: string;
+  replace?: boolean;
+}
+
+export type SubmitTarget = FormData | URLSearchParams | Record<string, string>;
+
 export interface RouterActions {
   navigate: (to: string, options?: NavigateOptions) => void;
   revalidate: () => void;
   prefetch: (to: string, withData: boolean) => void;
+  /** action 요청. 네트워크 실패 시 reject */
+  submit: (target: SubmitTarget, options?: SubmitOptions) => Promise<void>;
 }
 
 const noop = () => {};
@@ -43,6 +62,7 @@ export const RouterActionsContext = createContext<RouterActions>({
   navigate: noop,
   revalidate: noop,
   prefetch: noop,
+  submit: () => Promise.reject(new Error('ssr-kit 라우터가 hydrate 되기 전에는 submit 할 수 없다')),
 });
 /** 현재 렌더 중인 라우트의 matches index */
 export const RouteIndexContext = createContext<number>(-1);

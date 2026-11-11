@@ -14,6 +14,11 @@ export interface AdapterOptions<Req> {
   renderTimeout?: number;
   getNonce?: (req: Req) => string | undefined;
   onError?: (error: unknown, info: { url: string; phase: ErrorPhase }) => void;
+  /**
+   * action 요청 CSRF 검사에서 요청 host 외에 허용할 origin (예: 'https://app.example.com').
+   * 프록시가 Host 를 바꾸는 배포에서 공개 origin 을 넣는다
+   */
+  allowedOrigins?: string[];
 }
 
 const DEFAULT_RENDER_TIMEOUT_MS = 10_000;
@@ -37,5 +42,6 @@ export const toHandleOptions = <Req>(
     nonce: options.getNonce?.(req),
     onError: options.onError,
     unmatched,
+    allowedOrigins: options.allowedOrigins,
   };
 };

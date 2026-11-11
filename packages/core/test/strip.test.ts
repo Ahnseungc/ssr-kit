@@ -105,6 +105,45 @@ export default () => shared.label;
     expect(strip(`const loaderText = 'loader'; export default () => loaderText;`)).toBeNull();
   });
 
+  it('action 과 그 전용 헬퍼·import 를 지운다. action 만 있으면 로더 표시를 붙이지 않는다', () => {
+    const out = strip(`
+import { Form, useActionData } from 'ssr-kit';
+import { saveMemo } from './memo.server';
+import { z } from 'zod';
+const schema = z.object({ text: z.string() });
+export async function action({ request }) {
+  const input = schema.parse(Object.fromEntries(await request.formData()));
+  return saveMemo(input);
+}
+export default function Page() { const data = useActionData(); return <Form method="post">{data}</Form>; }
+`);
+    expect(out).not.toContain('memo.server');
+    expect(out).not.toContain('zod');
+    expect(out).not.toContain('schema');
+    expect(out).not.toMatch(/function action/);
+    expect(out).toContain(`import { Form, useActionData } from 'ssr-kit';`);
+    expect(out).not.toContain('__ssrkLoader');
+  });
+
+  it('loader 와 action 을 함께 지우고(지정자 export 포함) 로더 표시를 남긴다', () => {
+    const out = strip(`
+import { db } from './db.server';
+const loader = () => db.list();
+const action = () => db.insert();
+export { loader, action as action };
+export const head = () => ({});
+export default () => null;
+`);
+    expect(out).not.toContain('db');
+    expect(out).not.toMatch(/export \{/);
+    expect(out).toContain('export const head');
+    expect(out).toContain('export const __ssrkLoader = true;');
+  });
+
+  it('여러 선언이 섞인 export const action 도 에러', () => {
+    expect(() => strip(`export const action = () => 1, other = 2;`)).toThrow(/action.*따로/);
+  });
+
   it('여러 선언이 섞인 export const loader 는 에러', () => {
     expect(() => strip(`export const loader = () => 1, other = 2;`)).toThrow(/따로/);
   });

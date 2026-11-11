@@ -1,7 +1,8 @@
 import { preinit, preloadModule } from 'react-dom';
 
+import { findActionIndex, isActionMethod, isTrustedOrigin, runAction } from '../core/actions';
 import { isReportable, toRouteError } from '../core/errors';
-import { runLoaders } from '../core/loaders';
+import { type LoaderResult, runLoaders } from '../core/loaders';
 import { createMatcher, InvalidPathError, type Matcher } from '../core/match';
 import { serialize } from '../core/serialize';
 import type {
@@ -26,8 +27,10 @@ export interface HandleOptions {
   renderTimeout: number;
   nonce?: string;
   onError?: (error: unknown, info: { url: string; phase: ErrorPhase }) => void;
-  /** 매치 없을 때: 'next' 면 'unmatched' 반환, 'render' 면 404 렌더 */
+  /** 매치 없을 때(또는 GET·HEAD 외 요청인데 action 이 없을 때): 'next' 면 'unmatched' 반환, 'render' 면 404(405) */
   unmatched: 'next' | 'render';
+  /** action 요청(CSRF)에서 요청 host 외에 허용할 origin. 예: 'https://app.example.com' */
+  allowedOrigins?: string[];
 }
 
 export type HandleResult = 'handled' | 'unmatched';
@@ -178,6 +181,72 @@ const initialState = (
   dev,
 });
 
+const isReadMethod = (method: string) => method === 'GET' || method === 'HEAD';
+
+const methodNotAllowed = (sink: RenderSink, options: HandleOptions, allowNext: boolean) => {
+  if (allowNext && options.unmatched === 'next') return 'unmatched';
+  textResponse(sink, 405, 'Method Not Allowed');
+  return 'handled';
+};
+
+/**
+ * GET·HEAD 외 요청: action 이 없으면 다음 핸들러(사용자 API 라우트) 또는 405,
+ * 출처가 다르면 403. 통과하면 null
+ */
+const guardMutation = (
+  request: SsrRequest,
+  modules: RouteModule[],
+  sink: RenderSink,
+  options: HandleOptions,
+  allowNext: boolean,
+): HandleResult | null => {
+  if (isReadMethod(request.method)) return null;
+  if (!isActionMethod(request.method) || findActionIndex(modules) === -1) {
+    return methodNotAllowed(sink, options, allowNext);
+  }
+  if (!isTrustedOrigin(request, options.allowedOrigins)) {
+    textResponse(sink, 403, 'Forbidden');
+    return 'handled';
+  }
+  return null;
+};
+
+interface RouteDataInput {
+  matches: RouteMatch[];
+  modules: RouteModule[];
+  context: AppContext;
+}
+
+/** GET·HEAD 는 로더만, 그 외는 action 후 로더 */
+const runRouteData = (
+  build: ServerBuild,
+  request: SsrRequest,
+  sink: RenderSink,
+  options: HandleOptions,
+  input: RouteDataInput,
+  phase: 'loader' | 'data',
+): Promise<LoaderResult> => {
+  const base = {
+    ...input,
+    request,
+    signal: sink.signal,
+    dev: build.dev,
+    onError: (error: unknown) => report(build, options, request, phase, error),
+  };
+  if (isReadMethod(request.method)) return runLoaders(base);
+  return runAction({
+    ...base,
+    onActionError: (error) => report(build, options, request, 'action', error),
+  });
+};
+
+const respondRedirect = (sink: RenderSink, result: Extract<LoaderResult, { type: 'redirect' }>) => {
+  result.headers.set('location', result.to);
+  sink.writeHead(result.status, result.headers);
+  sink.end();
+  return 'handled' as const;
+};
+
 const matchOrInvalid = (build: ServerBuild, pathname: string, sink: RenderSink) => {
   try {
     return { matches: getMatcher(build.routes)(pathname) };
@@ -194,9 +263,8 @@ const handleData = async (
   sink: RenderSink,
   options: HandleOptions,
 ): Promise<HandleResult> => {
-  if (request.method !== 'GET') {
-    textResponse(sink, 405, 'Method Not Allowed');
-    return 'handled';
+  if (request.method !== 'GET' && !isActionMethod(request.method)) {
+    return methodNotAllowed(sink, options, false);
   }
   const pageUrl = new URL(request.url);
   pageUrl.pathname = request.url.pathname.slice(build.dataPrefix.length) || '/';
@@ -211,16 +279,17 @@ const handleData = async (
   }
 
   const modules = await loadModules(matched.matches);
+  const guarded = guardMutation(pageRequest, modules, sink, options, false);
+  if (guarded) return guarded;
   const context = (await options.getContext?.(pageRequest)) ?? {};
-  const result = await runLoaders({
-    matches: matched.matches,
-    modules,
-    request: pageRequest,
-    context,
-    signal: sink.signal,
-    dev: build.dev,
-    onError: (error) => report(build, options, pageRequest, 'data', error),
-  });
+  const result = await runRouteData(
+    build,
+    pageRequest,
+    sink,
+    options,
+    { matches: matched.matches, modules, context },
+    'data',
+  );
 
   if (result.type === 'redirect') {
     const body = JSON.stringify({ type: 'redirect', to: result.to, status: result.status });
@@ -264,6 +333,7 @@ export const handleRequest = async (
 
   if (!matches) {
     if (options.unmatched === 'next') return 'unmatched';
+    if (!isReadMethod(request.method)) return methodNotAllowed(sink, options, false);
     await renderDocument(build, request, sink, options, {
       state: initialState(request, [], [], NOT_FOUND_PAYLOAD, build.dev),
       status: 404,
@@ -275,9 +345,24 @@ export const handleRequest = async (
   }
 
   const modules = await loadModules(matches);
+  const guarded = guardMutation(request, modules, sink, options, true);
+  if (guarded) return guarded;
   const assets = await build.resolveAssets(routeFiles(matches));
 
   if (matches.some((m) => m.route.ssr === false)) {
+    if (!isReadMethod(request.method)) {
+      // 셸 라우트도 action 은 실행한다. redirect 가 아니면 셸을 그리고 데이터는 클라가 받는다
+      const context = (await options.getContext?.(request)) ?? {};
+      const result = await runRouteData(
+        build,
+        request,
+        sink,
+        options,
+        { matches, modules, context },
+        'loader',
+      );
+      if (result.type === 'redirect') return respondRedirect(sink, result);
+    }
     const payload: SsrPayload = { routes: [], data: {}, status: 200, shell: true };
     await renderDocument(build, request, sink, options, {
       state: initialState(request, [], [], payload, build.dev),
@@ -290,22 +375,15 @@ export const handleRequest = async (
   }
 
   const context = (await options.getContext?.(request)) ?? {};
-  const result = await runLoaders({
-    matches,
-    modules,
+  const result = await runRouteData(
+    build,
     request,
-    context,
-    signal: sink.signal,
-    dev: build.dev,
-    onError: (error) => report(build, options, request, 'loader', error),
-  });
-
-  if (result.type === 'redirect') {
-    result.headers.set('location', result.to);
-    sink.writeHead(result.status, result.headers);
-    sink.end();
-    return 'handled';
-  }
+    sink,
+    options,
+    { matches, modules, context },
+    'loader',
+  );
+  if (result.type === 'redirect') return respondRedirect(sink, result);
 
   noStoreOnError(result.payload.status, result.headers);
   await renderDocument(build, request, sink, options, {

@@ -2,8 +2,10 @@ import {
   type AnchorHTMLAttributes,
   Component,
   type ComponentType,
+  type FormHTMLAttributes,
   type MouseEvent,
   type ReactNode,
+  type SubmitEvent,
   useContext,
   useEffect,
   useRef,
@@ -14,6 +16,7 @@ import { mergeHead } from '../core/head';
 import type { DocumentProps, HeadTags, RouteError } from '../core/types';
 import {
   boundaryIndexOf,
+  type FormMethod,
   RouteIndexContext,
   RouterActionsContext,
   type RouterState,
@@ -241,6 +244,68 @@ export const Link = ({
         onTouchStart?.(event);
         if (intent) actions.prefetch(to, true);
       }}
+    />
+  );
+};
+
+export interface FormProps extends Omit<FormHTMLAttributes<HTMLFormElement>, 'method' | 'action'> {
+  /** 기본 'get'. put·patch·delete 는 JS 없이 제출되면 post 로 간다 */
+  method?: FormMethod;
+  /** 기본: 현재 경로+쿼리 */
+  action?: string;
+  replace?: boolean;
+  /** true 면 가로채지 않고 브라우저가 제출 */
+  reloadDocument?: boolean;
+}
+
+type Submitter = HTMLButtonElement | HTMLInputElement;
+
+/** new FormData(form, submitter) 는 구형 WebView 에 없어 누른 버튼 값을 직접 붙인다 */
+const collectFormData = (form: HTMLFormElement, submitter: Submitter | null) => {
+  const formData = new FormData(form);
+  if (submitter?.name) formData.append(submitter.name, submitter.value);
+  return formData;
+};
+
+/**
+ * 실제 <form> 을 렌더해 hydrate 전(JS 없음)에도 제출된다.
+ * hydrate 후에는 submit 을 가로채 데이터 엔드포인트로 보낸다.
+ */
+export const Form = ({
+  method = 'get',
+  action,
+  replace,
+  reloadDocument,
+  onSubmit,
+  ...rest
+}: FormProps) => {
+  const actions = useContext(RouterActionsContext);
+
+  const handleSubmit = (event: SubmitEvent<HTMLFormElement>) => {
+    onSubmit?.(event);
+    if (event.defaultPrevented || reloadDocument) return;
+    const submitter = event.submitter as Submitter | null;
+    const target = submitter?.getAttribute('formtarget') ?? event.currentTarget.target;
+    if (target && target !== '_self') return;
+    const to = submitter?.getAttribute('formaction') ?? action;
+    if (to && !isSameOrigin(to)) return;
+    const submitMethod = (submitter?.getAttribute('formmethod') as FormMethod | null) ?? method;
+    event.preventDefault();
+    actions
+      .submit(collectFormData(event.currentTarget, submitter), {
+        method: submitMethod.toLowerCase() as FormMethod,
+        action: to,
+        replace,
+      })
+      .catch((error: unknown) => console.error('[ssr-kit] 폼 제출 실패', error));
+  };
+
+  return (
+    <form
+      {...rest}
+      method={method === 'get' ? 'get' : 'post'}
+      action={action}
+      onSubmit={handleSubmit}
     />
   );
 };

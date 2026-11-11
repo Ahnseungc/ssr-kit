@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest, HTTPMethods } from 'fastify';
 
 import {
   type AdapterOptions,
@@ -37,11 +37,24 @@ const handle = async (options: FastifySsrOptions, request: FastifyRequest, reply
   }
 };
 
+const ACTION_METHODS: HTTPMethods[] = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
 const plugin: FastifyPluginAsync<FastifySsrOptions> = async (fastify, options) => {
   fastify.route({
     method: ['GET', 'HEAD'],
     url: '/*',
     handler: (request, reply) => handle(options, request, reply),
+  });
+  // action 본문은 ssr-kit 이 request.raw 에서 직접 읽는다. 캡슐화한 하위 스코프에서만
+  // 파서를 비워 사용자 라우트의 JSON 파싱 등은 그대로 둔다
+  await fastify.register(async (scope) => {
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser('*', (_request, _payload, done) => done(null));
+    scope.route({
+      method: ACTION_METHODS,
+      url: '/*',
+      handler: (request, reply) => handle(options, request, reply),
+    });
   });
 };
 

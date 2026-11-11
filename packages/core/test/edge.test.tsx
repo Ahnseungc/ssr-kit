@@ -5,10 +5,11 @@ import { Suspense, use } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { notFound, redirect } from '../src/core/errors';
-import type { RouteModule } from '../src/core/types';
+import { deserialize } from '../src/core/serialize';
+import type { RouteModule, SsrPayload } from '../src/core/types';
 import { createEdgeHandler } from '../src/edge/index';
 import { DefaultDocument } from '../src/react/components';
-import { useLoaderData } from '../src/react/hooks';
+import { useActionData, useLoaderData } from '../src/react/hooks';
 import type { ServerBuild } from '../src/server/build';
 
 const later = <T,>(ms: number, value: T) => new Promise<T>((r) => setTimeout(() => r(value), ms));
@@ -38,6 +39,10 @@ const modules: Record<string, RouteModule> = {
   missing: { default: Page, loader: () => notFound() },
   old: { default: Page, loader: () => redirect('/page', 308) },
   broken: { default: Broken },
+  form: {
+    default: () => <p id="form">{String(useActionData<() => { n: number }>()?.n)}</p>,
+    action: async ({ request }) => ({ n: (await request.json<{ n: number }>()).n * 2 }),
+  },
 };
 
 const build: ServerBuild = {
@@ -77,6 +82,17 @@ describe('createEdgeHandler (Web 스트림)', () => {
     const head = (await get('/page', { method: 'HEAD' }))!;
     expect(head.body).toBeNull();
     expect((await get('/page', { method: 'POST' }))!.status).toBe(405);
+  });
+
+  it('action: JSON 본문을 읽어 데이터 엔드포인트로 돌려준다', async () => {
+    const response = (await get('/_data/form', {
+      method: 'POST',
+      body: JSON.stringify({ n: 21 }),
+      headers: { origin: 'http://localhost', 'content-type': 'application/json' },
+    }))!;
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { payload: unknown[] };
+    expect(deserialize<SsrPayload>(body.payload).actionData).toEqual({ n: 42 });
   });
 
   it('셸 렌더 실패는 루트 에러 문서 500', async () => {

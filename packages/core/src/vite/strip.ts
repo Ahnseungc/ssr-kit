@@ -2,7 +2,9 @@ import MagicString from 'magic-string';
 
 import { type AstNode, collectReferences, nameOf, parse, type Reference } from './ast';
 
-const SERVER_EXPORT = 'loader';
+/** 클라 번들에서 지울 서버 전용 export */
+const SERVER_EXPORTS = ['loader', 'action'];
+const LOADER_EXPORT = 'loader';
 const LOADER_MARKER = '\nexport const __ssrkLoader = true;\n';
 
 type Range = [number, number];
@@ -64,37 +66,41 @@ const exportClause = (code: string, stmt: AstNode, specifiers: AstNode[]) => {
   return `export { ${list} }${source};`;
 };
 
-/** loader export 를 찾아 지운다. 지웠으면 true */
-const removeLoaderExports = (code: string, body: AstNode[], s: MagicString, removed: Range[]) => {
-  let found = false;
+const isServerExport = (name: string | undefined) =>
+  name !== undefined && SERVER_EXPORTS.includes(name);
+
+/** 서버 전용 export 를 찾아 지운다. 지운 이름 목록을 돌려준다 */
+const removeServerExports = (code: string, body: AstNode[], s: MagicString, removed: Range[]) => {
+  const found = new Set<string>();
   for (const stmt of body) {
     if (stmt.type !== 'ExportNamedDeclaration') continue;
     const declaration = stmt.declaration as AstNode | null;
 
-    if (
-      declaration?.type === 'FunctionDeclaration' &&
-      nameOf(declaration.id as AstNode) === SERVER_EXPORT
-    ) {
+    const functionName =
+      declaration?.type === 'FunctionDeclaration' ? nameOf(declaration.id as AstNode) : undefined;
+    if (isServerExport(functionName)) {
       s.remove(stmt.start, stmt.end);
       removed.push([stmt.start, stmt.end]);
-      found = true;
+      found.add(functionName!);
     }
     if (declaration?.type === 'VariableDeclaration') {
       const declarations = declaration.declarations as AstNode[];
-      const hit = declarations.some((d) => nameOf(d.id as AstNode) === SERVER_EXPORT);
+      const hit = declarations
+        .map((d) => nameOf(d.id as AstNode))
+        .find((name) => isServerExport(name));
       if (!hit) continue;
       if (declarations.length > 1) {
-        throw new Error(`'export const ${SERVER_EXPORT}' 는 다른 선언과 따로 써야 한다`);
+        throw new Error(`'export const ${hit}' 는 다른 선언과 따로 써야 한다`);
       }
       s.remove(stmt.start, stmt.end);
       removed.push([stmt.start, stmt.end]);
-      found = true;
+      found.add(hit);
     }
     if (!declaration) {
       const specifiers = stmt.specifiers as AstNode[];
-      const kept = specifiers.filter((spec) => exportedName(spec) !== SERVER_EXPORT);
+      const kept = specifiers.filter((spec) => !isServerExport(exportedName(spec)));
       if (kept.length === specifiers.length) continue;
-      found = true;
+      for (const spec of specifiers) if (!kept.includes(spec)) found.add(exportedName(spec)!);
       if (kept.length === 0) {
         s.remove(stmt.start, stmt.end);
         removed.push([stmt.start, stmt.end]);
@@ -171,19 +177,21 @@ const removeUnusedImports = (
   }
 };
 
-/** 클라이언트 번들용: loader export 와 그 전용 코드·import 제거 */
+/** 클라이언트 번들용: loader·action export 와 그 전용 코드·import 제거 */
 export const stripServerExports = (id: string, code: string) => {
-  if (!code.includes(SERVER_EXPORT)) return null;
+  if (!SERVER_EXPORTS.some((name) => code.includes(name))) return null;
   const program = parse(id, code);
   const s = new MagicString(code);
   const removed: Range[] = [];
 
-  if (!removeLoaderExports(code, program.body, s, removed)) return null;
+  const found = removeServerExports(code, program.body, s, removed);
+  if (found.size === 0) return null;
 
   const refs = collectReferences(program);
   removeDeadHelpers(program.body, refs, s, removed);
   removeUnusedImports(code, program.body, refs, s, removed);
-  s.append(LOADER_MARKER);
+  // 클라 라우터는 이 표시로 데이터 요청 여부를 정한다. action 만 있으면 필요 없다
+  if (found.has(LOADER_EXPORT)) s.append(LOADER_MARKER);
 
   return {
     code: s.toString(),
