@@ -1,7 +1,7 @@
 # ssr-kit 기술 스펙
 
 - 작성: 안승찬 · 2026-11-11
-- 상태: Draft v0.2 (검증 반영)
+- 상태: v0.3 (M1 + P1 구현 반영, 2026-11-11)
 - 근거: [ssr-kit-prd.md](../../prd/ssr-kit-prd.md) v0.1 — 요구사항 ID(R1, RT1, D1 …)는 PRD 표기를 그대로 쓴다.
 - 범위: M1(MVP, P0) 구현에 필요한 결정 전부 + P1 은 인터페이스만 고정.
 - 기준 버전: React 19.3 · Vite 8.3 · @vitejs/plugin-react 6.3 · Node 22+
@@ -281,15 +281,15 @@ if (process.env.NODE_ENV === 'production') {
 app.listen(3000);
 ```
 
-### 3.7 저수준 렌더 API (RT6, P1 — 인터페이스만 고정)
+### 3.7 저수준 렌더 API (RT6)
 
-외부 라우터(TanStack Router 등)를 쓸 때 매칭·로더를 건너뛰고 렌더·에셋·직렬화만 쓴다.
+외부 라우터(TanStack Router 등)를 쓸 때 매칭·로더를 건너뛰고 렌더·에셋·직렬화만 쓴다. `app` 은 `<html>` 을 포함한 **전체 문서**다(외부 라우터가 문서를 직접 그리는 경우가 많아 Document 로 감싸지 않는다).
 
 ```ts
 // ssr-kit/server
 export interface RenderOptions {
   request: SsrRequest;
-  /** 렌더할 앱 트리. Document 안에 들어감 */
+  /** 렌더할 전체 트리 (<html> 포함) */
   app: React.ReactNode;
   /** 서버→클라 전달 값. §7 직렬화 */
   data?: unknown;
@@ -297,8 +297,16 @@ export interface RenderOptions {
   modules?: string[];
   status?: number;
   headers?: Headers;
+  isBot?: boolean;
+  renderTimeout?: number;
+  nonce?: string;
+  onError?: (error: unknown, info: { url: string; phase: ErrorPhase }) => void;
 }
-export function render(build: ServerBuild, opts: RenderOptions, sink: RenderSink): Promise<void>;
+export function render(
+  build: Pick<ServerBuild, 'bootstrapModules' | 'resolveAssets' | 'dev' | 'fixStacktrace'>,
+  opts: RenderOptions,
+  sink: RenderSink,
+): Promise<void>;
 // 클라: ssr-kit/client 의 readSsrData<T>() 로 data 를 읽고 사용자가 직접 hydrateRoot
 ```
 
@@ -351,7 +359,7 @@ export function render(build: ServerBuild, opts: RenderOptions, sink: RenderSink
 - 7 의 로더들은 같은 `AbortController.signal` 을 받는다. 응답 완료 전 `res.on('close')` 시 abort.
 - `HEAD` 요청은 10 까지 수행 후 본문 없이 종료.
 
-### 5.2 스트리밍 데이터 (R2, P1)
+### 5.2 스트리밍 데이터 (R2)
 
 로더 반환 객체 안의 Promise 를 그대로 스트리밍한다.
 
@@ -361,9 +369,12 @@ export const loader = async () => ({ gold: await getGold(), chart: getChart() /*
 ```
 
 - 직렬화기(§7)가 Promise 에 ID 를 부여하고 자리표시자를 넣는다. 클라는 자리표시자를 pending Promise 로 복원한다.
-- resolve/reject 시 `<script>__SSRK.r(id, json)</script>` 를 만든다. **삽입은 React 가 `write` 한 청크와 청크 사이에서만** 한다(Transform 스트림이 React 의 write 호출 경계를 기준으로 큐를 flush).
+- resolve/reject 시 `<script>__SSRKR(id, 1|0, 직렬화값)</script>` 를 만든다. reject 값은 `RouteError` 로 바꿔 보낸다(prod 에서 메시지 숨김).
+- **삽입 위치:** React 는 출력을 2KB 단위로 잘라 `write` 하므로 write 사이는 태그 중간일 수 있다. 대신 React 가 flush 사이클 끝에 부르는 `destination.flush()` 를 경계로 쓴다(`server/deferred.ts` 의 `DeferredWriter`). flush 중이면 큐에 쌓았다가 `flush()` 때 쓰고, flush 사이면 바로 쓴다.
+- 클라 모듈보다 settle 스크립트가 먼저 올 수 있어, 부트스트랩 스크립트가 `window.__SSRKR` 을 큐(`__SSRKQ`)로 먼저 정의하고 `hydrate` 가 큐를 비운다.
 - 렌더 스트림이 끝나면 남은 Promise 가 settle 될 때까지 기다린 뒤 스크립트를 쓰고 `end()`. renderTimeout 이 지나면 남은 Promise 는 reject 로 보낸다.
-- 데이터 엔드포인트(§5.6)에서는 v1 에서 Promise 를 기다렸다가 한 번에 보낸다.
+- 데이터 엔드포인트(§5.6)에서는 Promise 를 기다렸다가 settle 된 Promise(`['p', 1|0, 값]`)로 보낸다. 클라 이동 후에도 컴포넌트가 `use()` 를 그대로 쓸 수 있다.
+- 로더 데이터 안의 Promise 는 redirect·에러로 버려져도 unhandled rejection 이 나지 않게 `runLoaders` 가 catch 를 붙여 둔다.
 
 ### 5.3 SPA 셸 (R6)
 
@@ -521,7 +532,27 @@ export function createDevServer(opts: { root: string; configFile?: string }): Pr
 - dev 에서 `bootstrapModules` 는 `['/@vite/client', '/@id/__x00__virtual:ssr-kit/client-entry']`. React Refresh preamble 은 client-entry 의 첫 import(`@vitejs/plugin-react/preamble`)로 해결해 HTML 주입이 필요 없다.
 - dev 에셋: 매치된 라우트 모듈의 ssr 모듈 그래프에서 CSS 모듈을 찾아 `preinit(url + '?direct', { as: 'style' })` — 첫 화면 FOUC 방지.
 - 에러: `server.ssrFixStacktrace(err)` 후 콘솔 출력.
-- **Fast Refresh (V5):** 라우트 모듈은 `loader`·`head` 같은 비컴포넌트 export 때문에 React Refresh 경계가 되지 못하고 dev 에서 전체 리로드된다. M1 은 이 동작을 허용하고 문서화한다. 상태 보존(플러그인이 라우트 모듈 HMR 을 직접 accept 하고 라우트 표를 교체)과 Vite 오버레이 연결은 P1.
+- **Fast Refresh (V5):** 라우트 모듈은 `loader`·`head`·`__ssrkLoader` 같은 비컴포넌트 export 때문에 React Refresh 경계가 되지 못한다. 플러그인이 dev client 라우트 모듈 끝에 코드를 붙여 plugin-react 런타임의 `window.__getReactRefreshIgnoredExports` 로 이 export 들을 경계 검사에서 빼고, `import.meta.hot.accept` 에서 `revalidate()` 를 불러 서버 로더 변경도 반영한다. 컴포넌트 상태는 보존된다. `head` 변경은 다음 이동 때 반영된다.
+- Vite 오버레이 연결은 미구현.
+
+### 6.7 파일 기반 라우팅 (RT5)
+
+`fsRoutes({ dir, outFile? })` 플러그인이 폴더 구조로 routes 파일(`node_modules/.ssr-kit/routes.generated.js`)을 만들고, `ssrKit({ routes: DEFAULT_FS_ROUTES_FILE })` 가 그 파일을 읽는다. 가상 모듈 대신 실제 파일을 써서 ssrKit 의 라우트 탐색을 그대로 재사용한다.
+
+| 파일 | 라우트 |
+|---|---|
+| `_layout.tsx` | 그 폴더의 레이아웃 (루트면 pathless) |
+| `index.tsx` | 인덱스 |
+| `[id].tsx` / `[[lang]]` / `[...rest].tsx` | `:id` / `:lang?` / `*` |
+| `(group)/` | 세그먼트 없는 그룹 |
+| `_` 로 시작, `*.test.*`·`*.spec.*`·`*.stories.*`·`*.server.*` | 무시 |
+
+- 라우트 id 는 `dir` 기준 경로에서 확장자를 뺀 값(`gold/[id]`).
+- dev 에서 파일 추가·삭제 시 다시 생성한다. 내용이 같으면 쓰지 않는다.
+
+### 6.8 prerender (B6)
+
+`ssr-kit/prerender` 의 `prerender({ build, paths, outDir })` 또는 CLI `ssr-kit-prerender --entry dist/server/entry.js --out <dir> /a /b`. 경로마다 `handleRequest` 를 봇 모드(Suspense 완료 대기)로 돌려 200 이면 `<outDir>/<path>/index.html` 을 쓴다. redirect·404 는 결과에만 남기고 파일을 쓰지 않는다. 데이터 엔드포인트 JSON 은 만들지 않는다.
 
 ### 6.6 브라우저 타겟 (B4)
 
@@ -596,9 +627,12 @@ navigate(to)
 | 어댑터 | 시그니처 | 단계 |
 |---|---|---|
 | `ssr-kit/node` | `(req, res, next?) => Promise<void>` — Express·Connect·Polka | P0 |
-| `ssr-kit/fastify` | `fastify.register(ssrKit, opts)` — `reply.hijack()` 후 `reply.raw` | P1 |
-| `ssr-kit/hono` | `(c) => Response` — `renderToReadableStream` | P1 |
-| `ssr-kit/web` | `(request: Request) => Promise<Response>` | P2 |
+| `ssr-kit/fastify` | `fastify.register(ssrKit, opts)` — `reply.hijack()` 후 `reply.raw` | 구현 |
+| `ssr-kit/hono` | `app.use('*', ssrKit(opts))` 미들웨어 — 매치 없으면 `next()` | 구현 |
+| `ssr-kit/web` | `createWebHandler(opts)(request) => Promise<Response \| null>` | 구현 |
+
+- Web·Hono 어댑터도 렌더러는 Node 스트림(`renderToPipeableStream` + `Readable.toWeb`)을 쓴다. 렌더 경로를 하나로 유지하려는 선택이며, Node·Bun·Deno 에서 동작하고 Cloudflare Workers 는 `nodejs_compat` 이 필요하다. `renderToReadableStream` 경로는 수요가 생기면 추가한다.
+- 어댑터 공통 옵션은 `AdapterOptions<Req>` (콜백은 각 프레임워크의 원본 요청/Context 를 받는다).
 
 `server/` 는 `SsrRequest` 와 `RenderSink` 만 안다. 어댑터는 원본 요청 → `SsrRequest` 변환과 sink 구현만 담당한다.
 

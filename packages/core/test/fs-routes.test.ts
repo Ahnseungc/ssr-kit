@@ -1,0 +1,226 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { createMatcher } from '../src/core/match';
+import type { RouteDef } from '../src/core/types';
+import {
+  type FsRouteNode,
+  generateRoutesModule,
+  scanRouteFiles,
+  toSegment,
+  writeRoutesFile,
+} from '../src/vite/fs-routes';
+import { scanRoutesFile } from '../src/vite/routes';
+
+const mod = () => Promise.resolve({ default: () => null });
+
+/** 생성 트리 → 더미 모듈을 단 RouteDef */
+const toRouteDefs = (nodes: FsRouteNode[]): RouteDef[] =>
+  nodes.map((node) => ({
+    id: node.id,
+    path: node.path,
+    module: mod,
+    children: node.children && toRouteDefs(node.children),
+  }));
+
+const matchIds = (files: string[], pathname: string) =>
+  createMatcher(toRouteDefs(scanRouteFiles(files)))(pathname)?.map((m) => ({
+    id: m.id,
+    params: m.params,
+  })) ?? null;
+
+const APP_FILES = [
+  '_layout.tsx',
+  'index.tsx',
+  'about.tsx',
+  'gold/_layout.tsx',
+  'gold/index.tsx',
+  'gold/[id].tsx',
+  'gold/new.tsx',
+  '[[lang]]/intro.tsx',
+  'files/[...rest].tsx',
+  '(auth)/_layout.tsx',
+  '(auth)/login.tsx',
+  '(marketing)/pricing.tsx',
+];
+
+describe('toSegment', () => {
+  it.each([
+    ['gold', 'gold'],
+    ['index', undefined],
+    ['[id]', ':id'],
+    ['[[lang]]', ':lang?'],
+    ['[...rest]', '*'],
+    ['(group)', undefined],
+  ])('%s → %s', (name, segment) => {
+    expect(toSegment(name)).toBe(segment);
+  });
+});
+
+describe('scanRouteFiles', () => {
+  it('중첩 레이아웃·인덱스·동적·그룹을 트리로 만든다', () => {
+    expect(scanRouteFiles(APP_FILES)).toEqual([
+      {
+        id: '_layout',
+        file: '_layout.tsx',
+        path: undefined,
+        children: [
+          { id: 'about', file: 'about.tsx', path: 'about' },
+          { id: 'index', file: 'index.tsx', path: undefined },
+          {
+            id: '(auth)/_layout',
+            file: '(auth)/_layout.tsx',
+            path: undefined,
+            children: [{ id: '(auth)/login', file: '(auth)/login.tsx', path: 'login' }],
+          },
+          { id: '(marketing)/pricing', file: '(marketing)/pricing.tsx', path: 'pricing' },
+          { id: '[[lang]]/intro', file: '[[lang]]/intro.tsx', path: ':lang?/intro' },
+          { id: 'files/[...rest]', file: 'files/[...rest].tsx', path: 'files/*' },
+          {
+            id: 'gold/_layout',
+            file: 'gold/_layout.tsx',
+            path: 'gold',
+            children: [
+              { id: 'gold/[id]', file: 'gold/[id].tsx', path: ':id' },
+              { id: 'gold/index', file: 'gold/index.tsx', path: undefined },
+              { id: 'gold/new', file: 'gold/new.tsx', path: 'new' },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('루트 레이아웃이 없으면 평평한 배열', () => {
+    expect(scanRouteFiles(['index.tsx', 'a/b/[id].ts'])).toEqual([
+      { id: 'index', file: 'index.tsx', path: undefined },
+      { id: 'a/b/[id]', file: 'a/b/[id].ts', path: 'a/b/:id' },
+    ]);
+  });
+
+  it('무시 대상 파일·폴더를 건너뛴다', () => {
+    const tree = scanRouteFiles([
+      'index.tsx',
+      '_components/Button.tsx',
+      'gold/_utils.ts',
+      'gold/[id].test.tsx',
+      'gold/[id].stories.tsx',
+      'gold/data.server.ts',
+      'gold/styles.css',
+      'types.d.ts',
+      'README.md',
+    ]);
+    expect(tree.map((node) => node.id)).toEqual(['index']);
+  });
+
+  it('입력 순서와 무관하게 같은 결과', () => {
+    const shuffled = [...APP_FILES].reverse();
+    expect(scanRouteFiles(shuffled)).toEqual(scanRouteFiles(APP_FILES));
+  });
+
+  it('id 가 겹치면 에러', () => {
+    expect(() => scanRouteFiles(['a.tsx', 'a.ts'])).toThrow(/a\.tsx, a\.ts/);
+  });
+});
+
+describe('createMatcher 와 함께', () => {
+  it.each([
+    ['/', ['_layout', 'index'], {}],
+    ['/about', ['_layout', 'about'], {}],
+    ['/gold', ['_layout', 'gold/_layout', 'gold/index'], {}],
+    ['/gold/42', ['_layout', 'gold/_layout', 'gold/[id]'], { id: '42' }],
+    ['/gold/new', ['_layout', 'gold/_layout', 'gold/new'], {}],
+    ['/intro', ['_layout', '[[lang]]/intro'], {}],
+    ['/ko/intro', ['_layout', '[[lang]]/intro'], { lang: 'ko' }],
+    ['/files/a/b', ['_layout', 'files/[...rest]'], { '*': 'a/b' }],
+    ['/login', ['_layout', '(auth)/_layout', '(auth)/login'], {}],
+    ['/pricing', ['_layout', '(marketing)/pricing'], {}],
+  ])('%s', (pathname, ids, params) => {
+    const matches = matchIds(APP_FILES, pathname);
+    expect(matches?.map((m) => m.id)).toEqual(ids);
+    expect(matches?.at(-1)?.params).toEqual(params);
+  });
+
+  it('없는 경로는 null', () => {
+    expect(matchIds(APP_FILES, '/nope/deep')).toBeNull();
+  });
+});
+
+describe('generateRoutesModule', () => {
+  const tree = scanRouteFiles(['_layout.tsx', 'index.tsx', 'gold/[id].tsx']);
+  const code = generateRoutesModule(tree, (file) => `./routes/${file}`);
+
+  it('() => import("리터럴") 형태로 출력한다', () => {
+    expect(code).toMatchInlineSnapshot(`
+      "// ssr-kit:fs-routes 가 생성한 파일. 직접 수정하지 말 것
+      import { defineRoutes } from 'ssr-kit';
+
+      export default defineRoutes([
+        {
+          id: "_layout",
+          module: () => import("./routes/_layout.tsx"),
+          children: [
+            {
+              id: "index",
+              module: () => import("./routes/index.tsx"),
+            },
+            {
+              id: "gold/[id]",
+              path: "gold/:id",
+              module: () => import("./routes/gold/[id].tsx"),
+            },
+          ],
+        },
+      ]);
+      "
+    `);
+  });
+
+  it('ssrKit 의 routes 스캔을 통과한다', () => {
+    const info = scanRoutesFile('routes.generated.js', code);
+    expect(info.hasDefaultExport).toBe(true);
+    expect(info.imports.map((item) => item.source)).toEqual([
+      './routes/_layout.tsx',
+      './routes/index.tsx',
+      './routes/gold/[id].tsx',
+    ]);
+  });
+});
+
+describe('writeRoutesFile', () => {
+  const tmpDirs: string[] = [];
+  afterEach(() => {
+    for (const dir of tmpDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const touch = (file: string) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'export default () => null;\n');
+  };
+
+  it('dir 을 읽어 상대 import 로 파일을 쓰고, 바뀐 게 없으면 다시 쓰지 않는다', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ssrk-fs-routes-'));
+    tmpDirs.push(root);
+    const dir = path.join(root, 'src/routes');
+    const out = path.join(root, 'node_modules/.ssr-kit/routes.generated.js');
+    for (const file of ['_layout.tsx', 'index.tsx', 'gold/[id].tsx', 'gold/_parts/Chart.tsx']) {
+      touch(path.join(dir, file));
+    }
+
+    expect(writeRoutesFile(dir, out)).toBe(true);
+    const code = fs.readFileSync(out, 'utf8');
+    expect(code).toContain('module: () => import("../../src/routes/_layout.tsx")');
+    expect(code).toContain('path: "gold/:id"');
+    expect(code).toContain('import("../../src/routes/gold/[id].tsx")');
+    expect(code).not.toContain('Chart');
+
+    expect(writeRoutesFile(dir, out)).toBe(false);
+
+    touch(path.join(dir, 'about.tsx'));
+    expect(writeRoutesFile(dir, out)).toBe(true);
+    expect(fs.readFileSync(out, 'utf8')).toContain('path: "about"');
+  });
+});

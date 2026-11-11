@@ -2,17 +2,13 @@ import { type ComponentType, useSyncExternalStore } from 'react';
 import { hydrateRoot } from 'react-dom/client';
 
 import { createMatcher } from '../core/match';
-import { deserialize } from '../core/serialize';
 import type { DocumentProps, RouteDef, SsrPayload } from '../core/types';
 import { DefaultDocument, Root } from '../react/components';
 import { RouterActionsContext, type RouterState, RouterStateContext } from '../react/context';
+import { readSsrData } from './deferred';
 import { type ClientRouter, createClientRouter } from './router';
 
-declare global {
-  interface Window {
-    __SSRK?: unknown[];
-  }
-}
+export { readSsrData };
 
 export interface HydrateOptions {
   routes: RouteDef[];
@@ -23,12 +19,6 @@ export interface HydrateOptions {
 }
 
 const DEFAULT_DATA_PREFIX = '/_data';
-
-/** 서버가 bootstrapScriptContent 로 넣은 값을 읽는다 (RT6 저수준 API 용) */
-export const readSsrData = <T,>(): T => {
-  if (!window.__SSRK) throw new Error('ssr-kit 서버 데이터(window.__SSRK)가 없다');
-  return deserialize<T>(window.__SSRK);
-};
 
 const RouterProvider = ({
   router,
@@ -99,5 +89,6 @@ export const hydrate = async ({
     onUncaughtError: onError,
   });
 
+  if (dev) Object.assign(window, { __ssrkRevalidate: router.actions.revalidate });
   if (payload.shell) router.actions.revalidate();
 };

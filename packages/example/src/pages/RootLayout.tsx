@@ -40,6 +40,7 @@ export default function RootLayout() {
         <Link to="/gold/missing">없는 금</Link>
         <Link to="/boom">에러</Link>
         <Link to="/about">소개</Link>
+        <Link to="/stream">스트리밍</Link>
         <Link to="/shell">셸</Link>
       </nav>
       {navigation.state === 'loading' ? <p className="loading">불러오는 중…</p> : null}

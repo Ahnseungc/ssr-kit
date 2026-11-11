@@ -50,6 +50,27 @@ type Resolve = Rollup.PluginContext['resolve'];
 
 const cleanId = (id: string) => id.replace(/[?#].*$/, '');
 
+/** 라우트 모듈의 비컴포넌트 export. React Refresh 경계 검사에서 뺀다 */
+const ROUTE_NON_COMPONENT_EXPORTS = ['loader', 'head', '__ssrkLoader'];
+
+/**
+ * dev: 라우트 모듈을 React Refresh 경계로 인정받게 하고(상태 보존),
+ * 바뀌면 현재 로더를 다시 실행해 서버 쪽 변경도 반영한다.
+ * 소스맵은 끝에 붙이는 코드라 원본 위치에 영향이 없어 생략한다.
+ */
+const appendRouteHmr = (file: string, code: string) => ({
+  code: `${code}
+if (import.meta.hot) {
+  const routeFiles = (window.__ssrkRouteFiles ??= new Set());
+  routeFiles.add(${JSON.stringify(file)});
+  window.__getReactRefreshIgnoredExports ??= ({ id }) =>
+    window.__ssrkRouteFiles.has(id) ? ${JSON.stringify(ROUTE_NON_COMPONENT_EXPORTS)} : [];
+  import.meta.hot.accept(() => window.__ssrkRevalidate?.());
+}
+`,
+  map: null,
+});
+
 const toAssetManifest = (manifest: Manifest, keys: Iterable<string>): AssetManifest => {
   const flatten = (key: string, seen = new Set<string>()) => {
     const files: string[] = [];
@@ -247,7 +268,10 @@ export const ssrKit = (options: SsrKitPluginOptions): Plugin => {
         );
       }
       const { files } = await discover(this.resolve.bind(this));
-      if (files.has(file)) return stripServerExports(file, code);
+      if (!files.has(file)) return;
+      const stripped = stripServerExports(file, code);
+      if (this.environment.mode !== 'dev') return stripped;
+      return appendRouteHmr(file, stripped?.code ?? code);
     },
 
     watchChange(id) {

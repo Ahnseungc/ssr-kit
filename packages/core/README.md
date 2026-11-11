@@ -99,14 +99,25 @@ pnpm e2e            # 예제 앱 prod 서버 E2E (Playwright)
 
 예제 dev 서버: `pnpm --filter ssr-kit-example dev` → http://localhost:3000
 
-## 진행 상황 (M1)
+## 진행 상황
 
 구현: 코드 라우팅·우선순위·params 타입, 병렬 로더·redirect·에러 경계·헤더 병합, 스트리밍 SSR + document hydrate,
-데이터 엔드포인트(`/_data/*`), head 병합, 클라 이동·프리패치(intent/viewport)·스크롤 복원, `ssr: false` 셸,
-Vite 8 Environment API 빌드·dev 서버, 클라 번들 `loader` 제거·`*.server` 차단, Node 어댑터.
+Promise 데이터 스트리밍(`use()`), 데이터 엔드포인트(`/_data/*`), head 병합, 클라 이동·프리패치·스크롤 복원, `ssr: false` 셸,
+Vite 8 Environment API 빌드·dev 서버, 클라 번들 `loader` 제거·`*.server` 차단, 라우트 모듈 Fast Refresh,
+CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), prerender(`ssr-kit-prerender`),
+어댑터 Node·Fastify·Hono·Web(`Request → Response`).
 
-아직: Promise 스트리밍 데이터(R2), CSP nonce 검증, Fastify·Hono 어댑터, 라우트 모듈 Fast Refresh 상태 보존(현재 전체 리로드),
-저수준 `render()`(RT6), 파일 기반 라우팅, prerender.
+아직: Vite 에러 오버레이 연결, `renderToReadableStream` 기반 Workers 전용 경로, prerender 데이터 JSON.
+
+| 서브패스 | 내용 |
+|---|---|
+| `ssr-kit` | 라우트 정의·훅·`Link`·`Outlet`·`Head` |
+| `ssr-kit/node` | Express·Connect 핸들러 |
+| `ssr-kit/fastify` · `ssr-kit/hono` · `ssr-kit/web` | 프레임워크 어댑터 |
+| `ssr-kit/server` | `handleRequest`, 저수준 `render()` |
+| `ssr-kit/client` | `hydrate`, `readSsrData` |
+| `ssr-kit/vite` | `ssrKit`, `fsRoutes`, `createDevServer` |
+| `ssr-kit/prerender` | `prerender()` (CLI `ssr-kit-prerender`) |
 
 ## 라이선스
 

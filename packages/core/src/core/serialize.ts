@@ -5,6 +5,7 @@
  * - 태그 값: [태그 문자열, ...] (첫 칸이 문자열)
  * - 객체: { 키: 인덱스 }
  * - 특수 값: 음수 인덱스
+ * - Promise: ['P', id] (나중에 스트리밍) 또는 ['p', 1|0, 값] (이미 settle)
  */
 const UNDEFINED = -1;
 const NAN = -2;
@@ -33,7 +34,16 @@ const specialNumber = (value: number) => {
   return null;
 };
 
-export const serialize = (root: unknown): string => {
+/** Promise 를 만났을 때 처리 방식. 없으면 throw */
+export type PromiseEncoder = (
+  promise: Promise<unknown>,
+) => { id: number } | { ok: boolean; value: unknown };
+
+export interface SerializeOptions {
+  onPromise?: PromiseEncoder;
+}
+
+export const serialize = (root: unknown, options: SerializeOptions = {}): string => {
   const table: Entry[] = [];
   const seen = new Map<unknown, number>();
 
@@ -86,7 +96,11 @@ export const serialize = (root: unknown): string => {
       return ['S', ...[...object].map((item, i) => add(item, `${path}<${i}>`))];
     }
     if (object instanceof Promise) {
-      throw new SerializeError(path, 'Promise 스트리밍은 아직 지원하지 않는다 (P1)');
+      if (!options.onPromise)
+        throw new SerializeError(path, 'Promise 는 로더 데이터에서만 쓸 수 있다');
+      const encoded = options.onPromise(object);
+      if ('id' in encoded) return ['P', encoded.id];
+      return ['p', encoded.ok ? 1 : 0, add(encoded.value, `${path}<settled>`)];
     }
     if (!isPlainObject(object)) {
       throw new SerializeError(path, `클래스 인스턴스 ${object.constructor?.name ?? ''}`);
@@ -110,7 +124,28 @@ export const escapeForScript = (json: string) =>
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
 
-export const deserialize = <T = unknown>(input: string | unknown[]): T => {
+export interface DeserializeOptions {
+  /** ['P', id] 자리에 넣을 Promise */
+  promise?: (id: number) => Promise<unknown>;
+}
+
+/** 서버에서 reject 된 값(RouteError 모양)을 Error 로 */
+export const toRejection = (value: unknown) => {
+  const error = value as { status?: number; message?: string } | null;
+  return Object.assign(new Error(error?.message ?? 'Error'), { status: error?.status ?? 500 });
+};
+
+const rejected = (reason: unknown) => {
+  const promise = Promise.reject(toRejection(reason));
+  // 컴포넌트가 use() 하기 전까지 unhandled rejection 으로 잡히지 않게
+  promise.catch(() => {});
+  return promise;
+};
+
+export const deserialize = <T = unknown>(
+  input: string | unknown[],
+  options: DeserializeOptions = {},
+): T => {
   const table = (typeof input === 'string' ? JSON.parse(input) : input) as Entry[];
   const done = new Map<number, unknown>();
 
@@ -152,6 +187,14 @@ export const deserialize = <T = unknown>(input: string | unknown[]): T => {
     switch (tag) {
       case 'X':
         return read(rest[0] as number);
+      case 'P': {
+        if (!options.promise) throw new Error('스트리밍 Promise 를 복원할 수 없다');
+        return remember(index, options.promise(rest[0] as number));
+      }
+      case 'p': {
+        const value = read(rest[1] as number);
+        return remember(index, rest[0] === 1 ? Promise.resolve(value) : rejected(value));
+      }
       case 'D':
         return remember(index, new Date(rest[0] as string));
       case 'R':

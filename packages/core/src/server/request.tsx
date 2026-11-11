@@ -1,12 +1,9 @@
-import type { Writable } from 'node:stream';
-
 import { preinit, preloadModule } from 'react-dom';
-import { renderToPipeableStream } from 'react-dom/server';
 
 import { isReportable, toRouteError } from '../core/errors';
 import { runLoaders } from '../core/loaders';
 import { createMatcher, InvalidPathError, type Matcher } from '../core/match';
-import { escapeForScript, serialize } from '../core/serialize';
+import { serialize } from '../core/serialize';
 import type {
   AppContext,
   RouteDef,
@@ -18,16 +15,10 @@ import type {
 import { DefaultDocument, Root } from '../react/components';
 import { RequestContextContext, type RouterState, RouterStateContext } from '../react/context';
 import type { ResolvedAssets, ServerBuild } from './build';
+import { serializeSettledPayload } from './deferred';
+import { type ErrorPhase, type RenderSink, streamTree } from './stream';
 
-export type ErrorPhase = 'loader' | 'shell' | 'stream' | 'data';
-
-export interface RenderSink {
-  /** 상태·헤더 확정 후 한 번 호출 */
-  writeHead(status: number, headers: Headers): void;
-  stream: Writable;
-  /** 연결 종료 감지 */
-  signal: AbortSignal;
-}
+export type { ErrorPhase, RenderSink } from './stream';
 
 export interface HandleOptions {
   getContext?: (request: SsrRequest) => AppContext | Promise<AppContext>;
@@ -110,64 +101,37 @@ const renderDocument = (
   input: DocumentInput,
   isFallback = false,
 ): Promise<void> =>
-  new Promise((resolve) => {
-    if (request.method === 'HEAD') {
-      input.headers.set('content-type', 'text/html; charset=utf-8');
-      sink.writeHead(input.status, input.headers);
-      sink.stream.end();
-      resolve();
-      return;
-    }
-    const tree = (
-      <RequestContextContext value={input.context}>
-        <RouterStateContext value={input.state}>
-          <ServerRoot build={build} assets={input.assets} />
-        </RouterStateContext>
-      </RequestContextContext>
-    );
-    let started = false;
-    const start = () => {
-      if (started) return;
-      started = true;
-      input.headers.set('content-type', 'text/html; charset=utf-8');
-      sink.writeHead(input.status, input.headers);
-      stream.pipe(sink.stream);
-      resolve();
-    };
-
-    const stream = renderToPipeableStream(tree, {
+  streamTree(
+    <RequestContextContext value={input.context}>
+      <RouterStateContext value={input.state}>
+        <ServerRoot build={build} assets={input.assets} />
+      </RouterStateContext>
+    </RequestContextContext>,
+    {
+      request,
+      sink,
+      status: input.status,
+      headers: input.headers,
       bootstrapModules: build.bootstrapModules,
-      bootstrapScriptContent: `window.__SSRK=${escapeForScript(serialize(input.state.payload))}`,
+      data: input.state.payload,
+      dev: build.dev,
       nonce: options.nonce,
-      onShellReady() {
-        if (!options.isBot) start();
+      isBot: options.isBot,
+      renderTimeout: options.renderTimeout,
+      report: (phase, error) => report(build, options, request, phase, error),
+      onShellError: (error) => {
+        if (isFallback) return textResponse(sink, 500, 'Internal Server Error');
+        return renderDocument(
+          build,
+          request,
+          sink,
+          options,
+          rootErrorInput(build, input, error),
+          true,
+        );
       },
-      onAllReady() {
-        start();
-      },
-      onShellError(error) {
-        if (isFallback) {
-          textResponse(sink, 500, 'Internal Server Error');
-          resolve();
-          return;
-        }
-        const fallback = rootErrorInput(build, input, error);
-        renderDocument(build, request, sink, options, fallback, true).then(resolve);
-      },
-      onError(error) {
-        if (sink.signal.aborted) return;
-        report(build, options, request, started ? 'stream' : 'shell', error);
-      },
-    });
-
-    const timer = setTimeout(
-      () => stream.abort(new Error(`renderTimeout(${options.renderTimeout}ms) 초과`)),
-      options.renderTimeout,
-    );
-    timer.unref?.();
-    sink.stream.on('close', () => clearTimeout(timer));
-    sink.signal.addEventListener('abort', () => stream.abort(), { once: true });
-  });
+    },
+  );
 
 const rootErrorInput = (
   build: ServerBuild,
@@ -261,8 +225,8 @@ const handleData = async (
     jsonResponse(sink, 200, result.headers, body);
     return 'handled';
   }
-  const body = `{"type":"data","payload":${serialize(result.payload)}}`;
-  jsonResponse(sink, result.payload.status, result.headers, body);
+  const payload = await serializeSettledPayload(result.payload, build.dev);
+  jsonResponse(sink, result.payload.status, result.headers, `{"type":"data","payload":${payload}}`);
   return 'handled';
 };
 

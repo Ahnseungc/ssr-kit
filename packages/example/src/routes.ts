@@ -10,6 +10,7 @@ export default defineRoutes([
       { id: 'old-gold', path: 'old-gold/:id', module: () => import('./pages/OldGold') },
       { id: 'boom', path: 'boom', module: () => import('./pages/Boom') },
       { id: 'about', path: 'about', module: () => import('./pages/About') },
+      { id: 'stream', path: 'stream', module: () => import('./pages/Stream') },
       { id: 'shell', path: 'shell', ssr: false, module: () => import('./pages/Shell') },
     ],
   },

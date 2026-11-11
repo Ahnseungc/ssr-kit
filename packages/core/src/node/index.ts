@@ -3,19 +3,27 @@ import type { TLSSocket } from 'node:tls';
 
 import type { AppContext, SsrRequest } from '../core/types';
 import type { ServerBuild } from '../server/build';
-import { type ErrorPhase, handleRequest, type RenderSink } from '../server/request';
+import {
+  type ErrorPhase,
+  type HandleOptions,
+  handleRequest,
+  type RenderSink,
+} from '../server/request';
 
-export interface NodeHandlerOptions {
+/** 어댑터 공통 옵션. Req 는 어댑터 원본 요청 */
+export interface AdapterOptions<Req> {
   /** prod: `dist/server/entry.js` 의 build, dev: `await dev.getBuild()` */
   build: ServerBuild;
-  getContext?: (req: IncomingMessage) => AppContext | Promise<AppContext>;
+  getContext?: (req: Req) => AppContext | Promise<AppContext>;
   /** 기본: 검색엔진·SNS 미리보기 UA. false 면 항상 스트리밍 */
-  isBot?: ((req: IncomingMessage) => boolean) | false;
+  isBot?: ((req: Req) => boolean) | false;
   /** ms */
   renderTimeout?: number;
-  getNonce?: (req: IncomingMessage) => string | undefined;
+  getNonce?: (req: Req) => string | undefined;
   onError?: (error: unknown, info: { url: string; phase: ErrorPhase }) => void;
 }
+
+export type NodeHandlerOptions = AdapterOptions<IncomingMessage>;
 
 type Next = (error?: unknown) => void;
 
@@ -23,7 +31,24 @@ const DEFAULT_RENDER_TIMEOUT_MS = 10_000;
 const BOT_UA =
   /bot|crawl|spider|slurp|facebookexternalhit|kakaotalk-scrap|daum|yeti|twitterbot|slackbot|linkedinbot|discordbot|whatsapp|telegrambot|applebot|bingpreview|googlebot|naver/i;
 
-const defaultIsBot = (req: IncomingMessage) => BOT_UA.test(req.headers['user-agent'] ?? '');
+/** 어댑터 옵션 → handleRequest 옵션. userAgent 는 기본 봇 판별용 */
+export const toHandleOptions = <Req>(
+  options: AdapterOptions<Req>,
+  req: Req,
+  userAgent: string | undefined,
+  unmatched: HandleOptions['unmatched'],
+): HandleOptions => {
+  const { getContext, isBot } = options;
+  const detectBot = isBot === false ? () => false : (isBot ?? (() => BOT_UA.test(userAgent ?? '')));
+  return {
+    getContext: getContext ? () => getContext(req) : undefined,
+    isBot: detectBot(req),
+    renderTimeout: options.renderTimeout ?? DEFAULT_RENDER_TIMEOUT_MS,
+    nonce: options.getNonce?.(req),
+    onError: options.onError,
+    unmatched,
+  };
+};
 
 export const toSsrRequest = (req: IncomingMessage): SsrRequest => {
   const encrypted = (req.socket as TLSSocket).encrypted === true;
@@ -44,7 +69,7 @@ export const toSsrRequest = (req: IncomingMessage): SsrRequest => {
 export const getNodeRequest = (request: SsrRequest): IncomingMessage =>
   request.raw as IncomingMessage;
 
-const createSink = (res: ServerResponse): RenderSink => {
+export const createSink = (res: ServerResponse): RenderSink => {
   const controller = new AbortController();
   res.on('close', () => {
     if (!res.writableFinished) controller.abort();
@@ -63,7 +88,7 @@ const createSink = (res: ServerResponse): RenderSink => {
   };
 };
 
-const fail = (res: ServerResponse, error: unknown, next?: Next) => {
+export const fail = (res: ServerResponse, error: unknown, next?: Next) => {
   if (res.headersSent) {
     res.destroy(error instanceof Error ? error : undefined);
     return;
@@ -76,10 +101,9 @@ const fail = (res: ServerResponse, error: unknown, next?: Next) => {
   res.end('Internal Server Error');
 };
 
-export const createSsrHandler = (options: NodeHandlerOptions) => {
-  const isBot = options.isBot === false ? () => false : (options.isBot ?? defaultIsBot);
-
-  return async (req: IncomingMessage, res: ServerResponse, next?: Next): Promise<void> => {
+export const createSsrHandler =
+  (options: NodeHandlerOptions) =>
+  async (req: IncomingMessage, res: ServerResponse, next?: Next): Promise<void> => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       if (next) return next();
       res.statusCode = 405;
@@ -87,14 +111,12 @@ export const createSsrHandler = (options: NodeHandlerOptions) => {
       return;
     }
     try {
-      const result = await handleRequest(options.build, toSsrRequest(req), createSink(res), {
-        getContext: options.getContext ? () => options.getContext!(req) : undefined,
-        isBot: isBot(req),
-        renderTimeout: options.renderTimeout ?? DEFAULT_RENDER_TIMEOUT_MS,
-        nonce: options.getNonce?.(req),
-        onError: options.onError,
-        unmatched: next ? 'next' : 'render',
-      });
+      const result = await handleRequest(
+        options.build,
+        toSsrRequest(req),
+        createSink(res),
+        toHandleOptions(options, req, req.headers['user-agent'], next ? 'next' : 'render'),
+      );
       if (result === 'unmatched') next?.();
     } catch (error) {
       if (error instanceof Error) options.build.fixStacktrace?.(error);
@@ -102,4 +124,3 @@ export const createSsrHandler = (options: NodeHandlerOptions) => {
       fail(res, error, next);
     }
   };
-};

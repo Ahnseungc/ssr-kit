@@ -18,6 +18,18 @@ export type LoaderResult =
 
 const DEFAULT_CACHE_CONTROL = 'private, no-store';
 
+/** 로더 데이터 안의 Promise 가 버려져도(redirect·에러) unhandled rejection 으로 프로세스를 죽이지 않게 */
+const silencePromises = (value: unknown, seen = new Set<unknown>()) => {
+  if (typeof value !== 'object' || value === null || seen.has(value)) return;
+  seen.add(value);
+  if (value instanceof Promise) {
+    value.catch(() => {});
+    return;
+  }
+  if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype) return;
+  for (const child of Object.values(value)) silencePromises(child, seen);
+};
+
 /** 루트 → 리프 순서로 덮어쓰기. Set-Cookie 는 전부 append */
 export const mergeHeaders = (list: Headers[]): Headers => {
   const merged = new Headers();
@@ -66,6 +78,7 @@ export const runLoaders = async (options: RunLoadersOptions): Promise<LoaderResu
     matches.map((match, i) => runOne(modules[i]!, match, options, headerList[i]!)),
   );
   const headers = mergeHeaders(headerList);
+  for (const result of results) if (result.status === 'fulfilled') silencePromises(result.value);
 
   const redirectIndex = results.findIndex((r) => r.status === 'rejected' && isRedirect(r.reason));
   if (redirectIndex !== -1) {

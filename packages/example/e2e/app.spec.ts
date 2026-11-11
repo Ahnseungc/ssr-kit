@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -163,4 +164,35 @@ test('클라이언트 번들에 서버 전용 코드가 없다', () => {
     expect(text, file).not.toContain('ssr-kit-server-only-secret');
     expect(text, file).not.toContain('DB 접속 정보');
   }
+});
+
+test('Promise 데이터: 셸을 먼저 보내고 Suspense 경계를 스트리밍으로 채운다', async ({
+  page,
+  request,
+}) => {
+  const html = await (await request.get('/stream')).text();
+  expect(html).toContain('차트 불러오는 중');
+  expect(html).toMatch(/__SSRKR\(0,1,/);
+
+  const errors = collectErrors(page);
+  await page.goto('/stream');
+  await expect(page.getByTestId('chart')).toContainText('152000');
+  await expect(page.getByTestId('chart')).toContainText('(date)');
+  expect(errors).toEqual([]);
+});
+
+test('Promise 데이터: 클라 이동으로 들어와도 Suspense 로 그린다', async ({ page }) => {
+  await page.goto('/');
+  await hydrated(page);
+  await page.getByRole('link', { name: '스트리밍' }).click();
+  await expect(page.getByRole('heading', { name: '실시간 시세' })).toBeVisible();
+  await expect(page.getByTestId('chart')).toContainText('(date)');
+});
+
+test('prerender CLI 가 정적 HTML 을 만든다', () => {
+  const root = path.join(import.meta.dirname, '..');
+  execFileSync('pnpm', ['run', 'prerender'], { cwd: root, stdio: 'pipe' });
+  const html = readFileSync(path.join(root, 'dist/prerendered/gold/1/index.html'), 'utf8');
+  expect(html).toContain('순금 24K');
+  expect(readFileSync(path.join(root, 'dist/prerendered/index.html'), 'utf8')).toContain('금 시세');
 });
