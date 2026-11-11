@@ -1,8 +1,8 @@
-# PRD — Node 기반 React SSR 플러그인 (가칭 `ssr-kit`)
+# PRD — ssr-kit (Node 기반 React SSR 플러그인)
 
 - 작성: 안승찬 · 2026-11-11
 - 상태: Draft v0.1
-- 레포: 개인 계정(Ahnseungc) 신규 레포 예정
+- 레포: github.com/Ahnseungc/ssr-kit
 
 ---
 
@@ -230,7 +230,7 @@ HTML  + <script>window.__SSR_DATA__</script> + modulepreload(manifest)
 
 ## 13. 미결 질문
 
-1. 패키지 이름 — `ssr-kit` 은 가칭. npm 선점 여부 확인 필요.
+1. 패키지 이름 — `ssr-kit` 확정 (2026-11-11 npm `ssr-kit`·`ssrkit`·`ssr_kit` 미사용 확인). 첫 배포 전까지 선점 안 되면 그대로 사용, 막히면 `@ahnseungc/ssr-kit` 스코프로.
 2. 데이터 엔드포인트 방식 — `?_data` 쿼리 vs `/_data/*` prefix vs `Accept` 헤더 협상.
 3. 로더 타입 추론 — `typeof loader` 제네릭 vs 라우트 ID 기반 레지스트리(TanStack 방식).
 4. 클라이언트 라우터를 자체 구현할지, 외부 라우터를 1급으로 지원하고 자체는 최소로 둘지.
