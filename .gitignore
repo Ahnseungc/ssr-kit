@@ -10,3 +10,4 @@ playwright-report/
 .env
 .env.*
 packages/core/test/fixtures/*/out/
+.claude/
