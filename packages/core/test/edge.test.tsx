@@ -72,6 +72,17 @@ describe('createEdgeHandler (Web 스트림)', () => {
     expect(settleAt).toBeGreaterThan(html.lastIndexOf('</html>'));
   });
 
+  it('스트리밍 문서는 런타임 압축을 끄고(identity), 봇 응답·직접 정한 인코딩은 그대로 둔다', async () => {
+    const streamed = (await get('/page'))!;
+    expect(streamed.headers.get('content-encoding')).toBe('identity');
+    await streamed.text();
+    const bot = (await handle(
+      new Request('http://localhost/page', { headers: { 'user-agent': 'Googlebot/2.1' } }),
+    ))!;
+    expect(bot.headers.get('content-encoding')).toBeNull();
+    await bot.text();
+  });
+
   it('404·redirect·데이터·HEAD·405', async () => {
     expect((await get('/missing'))!.status).toBe(404);
     const redirected = (await get('/old'))!;

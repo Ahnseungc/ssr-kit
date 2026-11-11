@@ -838,6 +838,7 @@ submit(target, { method = 'post', action = 현재 경로+쿼리, replace })
 - `ssr-kit/web` 은 Node 렌더러를 `Readable.toWeb` 으로 감싸 Node·Bun·Deno 에서 쓴다. Promise 데이터를 React 출력 사이사이에 끼울 수 있다.
 - `ssr-kit/edge` 는 Workers·Vercel Edge 용. React web 스트림은 flush 경계를 알 수 없어서 settle 스크립트를 **React 출력이 끝난 뒤에** 붙인다. HTML 의 Suspense 경계는 그대로 점진 스트리밍되지만, Promise 데이터를 쓰는 경계의 hydrate 는 응답 끝까지 기다린다.
 - `ssr-kit/hono` 는 어디서나 돌도록 edge 렌더러를 쓴다.
+- **압축과 스트리밍:** workerd 등 런타임이 HTML 을 gzip 하면 압축기가 응답 끝까지 모아 셸이 먼저 오지 않는다(로컬 `wrangler dev` 에서 4.4KB 셸이 2초 뒤 한꺼번에 도착하는 걸 확인). edge 어댑터는 스트리밍 문서(봇 모드가 아니고 사용자가 `Content-Encoding` 을 정하지 않은 경우)에 `Content-Encoding: identity` 를 붙인다. Node 어댑터는 `compression()` 같은 압축 미들웨어가 붙인 `res.flush()` 를 React flush 마다 호출한다.
 - edge 모듈 그래프에 `node:*` import 가 없는지 테스트(`test/edge.test.tsx`)로 확인한다.
 - 어댑터 공통 옵션은 `AdapterOptions<Req>` (콜백은 각 프레임워크의 원본 요청/Context 를 받는다).
 

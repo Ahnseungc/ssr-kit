@@ -51,6 +51,8 @@ export class DeferredWriter extends Writable {
   flush() {
     this.midFlush = false;
     for (const chunk of this.queue.splice(0)) this.target.write(chunk);
+    // compression() 같은 압축 미들웨어가 붙인 res.flush() 로 압축 버퍼도 내보낸다
+    (this.target as Writable & { flush?: () => void }).flush?.();
   }
 
   private inject(id: number, outcome: Outcome) {

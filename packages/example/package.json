@@ -9,7 +9,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "e2e": "playwright test",
     "clean": "rm -rf dist test-results playwright-report",
-    "prerender": "ssr-kit-prerender --entry dist/server/entry.js --out dist/prerendered / /about /gold/1"
+    "prerender": "ssr-kit-prerender --entry dist/server/entry.js --out dist/prerendered / /about /gold/1",
+    "demo:dev": "wrangler dev --port 4600",
+    "demo:deploy": "wrangler deploy"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.107.1",
@@ -25,6 +27,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-legacy": "^8.2.4",
     "@vitejs/plugin-react": "^6.3.0",
-    "vite": "^8.3.8"
+    "vite": "^8.3.8",
+    "wrangler": "^4.160.0"
   }
 }

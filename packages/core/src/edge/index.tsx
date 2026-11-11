@@ -21,6 +21,7 @@ import { HTML_CONTENT_TYPE, type RenderSink, type TreeRenderOptions } from '../s
 export type EdgeHandlerOptions = AdapterOptions<Request>;
 
 const NULL_BODY_STATUS = new Set([101, 204, 205, 304]);
+const IDENTITY_ENCODING = 'identity';
 const encoder = new TextEncoder();
 
 const hasNoBody = (status: number, method: string) =>
@@ -59,6 +60,11 @@ const renderTree = async (
 ) => {
   const { headers } = options;
   headers.set('content-type', HTML_CONTENT_TYPE);
+  // 런타임(workerd 등)이 HTML 을 gzip 하면 압축기가 끝까지 모아 스트리밍이 사라진다.
+  // 스트리밍 응답은 압축하지 않게 한다 (봇 모드처럼 끝까지 기다렸다 보내는 응답은 그대로)
+  if (!options.isBot && !headers.has('content-encoding')) {
+    headers.set('content-encoding', IDENTITY_ENCODING);
+  }
   if (options.method === 'HEAD') {
     options.onHead?.(headers);
     respond(new Response(null, { status: options.status, headers }));

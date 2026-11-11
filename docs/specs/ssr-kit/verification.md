@@ -86,6 +86,8 @@
 | 19 | 병렬 브랜치 통합: action 이 미들웨어 밖에서 실행될 수 있는 구조 | 인증 미들웨어를 action 이 우회 | 미들웨어 파이프라인 안쪽에서 action → 로더. 단위 `middleware-action` |
 | 20 | dev 첫 로드: 라우트 모듈이 쓰는 라이브러리(예: TanStack Query)를 Vite 가 늦게 발견 | 재최적화 중 React 두 벌 → 에러 후 강제 새로고침 | routes·Document 를 `optimizeDeps.entries` 로. 수동(캐시 비운 dev) |
 | 21 | 같은 문서 해시 링크에 focus 시 데이터 프리패치 | 불필요한 `/_data` 요청 (E2E 15회 중 1회 실패) | 해시 이동은 프리패치 안 함. 단위 `client-router` |
+| 22 | 런타임 gzip 이 스트리밍 HTML 을 끝까지 버퍼링 (Workers) | 셸이 먼저 오지 않음 — 브라우저 첫 화면이 데이터 끝난 뒤 | edge 스트리밍 문서에 `Content-Encoding: identity`. 단위 `edge`, 헤드리스 Chromium 측정(FCP 36ms) |
+| 23 | Node 에서 `compression()` 미들웨어 사용 시 같은 버퍼링 | 같음 | React flush 마다 `res.flush()` 호출. 단위 `node-handler` |
 
 ## 4. 알려진 한계
 

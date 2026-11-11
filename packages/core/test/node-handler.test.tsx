@@ -160,3 +160,22 @@ describe('Node 핸들러 (실제 http 서버)', () => {
     expect((await fetch(`${base}/item/1`, { method: 'POST' })).status).toBe(405);
   });
 });
+
+describe('압축 미들웨어와 함께', () => {
+  it('React flush 마다 res.flush() 를 불러 압축 버퍼를 내보낸다', async () => {
+    const flushes: number[] = [];
+    const server2 = createServer((req, res) => {
+      // compression() 이 붙이는 것과 같은 모양
+      (res as ServerResponse & { flush: () => void }).flush = () => flushes.push(Date.now());
+      void handler(req, res);
+    });
+    await new Promise<void>((r) => server2.listen(0, r));
+    const port = (server2.address() as AddressInfo).port;
+    await (
+      await fetch(`http://localhost:${port}/item/1`, { headers: { 'user-agent': 'Mozilla/5.0' } })
+    ).text();
+    await new Promise<void>((r) => server2.close(() => r()));
+    // 셸 flush + Suspense 경계 flush
+    expect(flushes.length).toBeGreaterThanOrEqual(2);
+  });
+});

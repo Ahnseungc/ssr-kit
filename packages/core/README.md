@@ -1,140 +1,310 @@
 # ssr-kit
 
-Node 서버(Express·Connect·`node:http`)에 미들웨어 하나로 붙는 React 19 스트리밍 SSR 플러그인.
-빌드는 Vite 8 플러그인, 런타임은 `(req, res, next)` 핸들러 하나.
+[![CI](https://github.com/Ahnseungc/ssr-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/Ahnseungc/ssr-kit/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/Ahnseungc/ssr-kit/blob/main/LICENSE)
 
-- 서버는 사용자 소유 — 인증·로깅·프록시 미들웨어를 그냥 Express 코드로 쓴다
-- 캐시는 HTTP 헤더로만 — 프레임워크 암묵 캐시 없음, 기본 `Cache-Control: private, no-store`
-- 라우트는 코드로 선언, 로더는 라우트 모듈의 `loader` export (클라 번들에서 자동 제거)
-- 라우트 `middleware` export(onion, 로더 전 실행 — 인증 가드) · `Server-Timing` 헤더(dev 기본)
-- 데이터 변경은 `action` export + `<Form>` — JS 없이도 일반 폼 POST 로 동작, hydrate 후엔 문서 새로고침 없이
-- RSC 없이 클래식 SSR + document 전체 hydrate
+**React 19 streaming SSR as one middleware for the Node server you already have. Built with Vite 8, no framework lock-in.**
 
-문서: [PRD](https://github.com/Ahnseungc/ssr-kit/blob/main/docs/prd/ssr-kit-prd.md) · [기술 스펙](https://github.com/Ahnseungc/ssr-kit/blob/main/docs/specs/ssr-kit/spec.md)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Ahnseungc/ssr-kit/main/docs/assets/demo.gif" width="400" alt="ssr-kit demo: the page shell renders first and a chart streams in, a form posts without a page reload, and a route middleware redirects to login before the admin page" />
+</p>
 
-## 빠른 시작
+<p align="center">
+  <b><a href="#run-the-demo">Run the demo →</a></b> (Express, or Cloudflare Workers locally)
+</p>
+
+## Why
+
+Next.js owns your server. ssr-kit is a function you mount on it.
+
+| With Next.js App Router                                       | With ssr-kit                                                                 |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| The framework owns the server; custom servers are discouraged | `app.use(createSsrHandler({ build }))` on Express, Fastify, Hono, or Workers |
+| Implicit caching rules that change between majors             | Caching is plain HTTP headers. Default `Cache-Control: private, no-store`    |
+| `'use client'` boundaries and an RSC payload next to the HTML | Classic SSR + hydration. Every component runs on both sides                  |
+| File conventions decide your routes                           | Routes are code (`defineRoutes`). File routes are an optional plugin         |
+| Opaque bundler config                                         | Your `vite.config.ts` is the source of truth                                 |
+| Self-hosting needs extra cache and image setup                | It is just your Node server (or a Worker)                                    |
+
+[한국어 문서](https://github.com/Ahnseungc/ssr-kit/blob/main/docs/README.ko.md)
+
+## Features
+
+- **Streaming SSR**: the shell goes out first. Return a Promise from a loader and `use()` it inside `<Suspense>`; the data streams into the same response.
+- **Loaders and actions**: `loader` (GET) and `action` (POST/PUT/PATCH/DELETE) are route-module exports that are stripped from the client bundle. `<Form>` works without JavaScript, and without a page reload once hydrated.
+- **Route middleware**: onion-style `middleware` runs before loaders and actions on every document and data request. Put auth guards here.
+- **Client navigation**: `<Link>` fetches only loader data (`/_data/*`), with intent / viewport prefetch, scroll restoration, and a redirect loop guard.
+- **Type-safe links**: generated route types make `<Link to="/gol/1">` a compile error. `href('/gold/:id', { id })` builds URLs.
+- **Server-only code stays on the server**: `loader`, `action`, `middleware`, their helpers, and their imports are removed from the client bundle. Importing a `*.server.ts` file from client code fails the build.
+- **Adapters**: Node (`(req, res, next)`, works with Express / Connect), Fastify, Hono, Web `Request → Response`, and an edge adapter with no `node:*` imports for Cloudflare Workers.
+- **Errors**: route `ErrorBoundary`, `notFound()`, `redirect()`, `httpError()`. Production hides internal messages. Dev shows server errors in the Vite overlay.
+- **Old WebViews**: works with `@vitejs/plugin-legacy`; ssr-kit adds the nomodule scripts that SSR pages otherwise miss.
+- **Extras**: `head()` merging, CSP nonce, `Server-Timing`, prerender to static HTML, file-based routes, React Fast Refresh for route modules.
+- Client runtime **5.7 KB** min+gzip. No runtime dependencies besides React.
+
+## Install
+
+```bash
+npm install ssr-kit react react-dom
+npm install -D vite @vitejs/plugin-react
+```
+
+| Import              | For                                                  | Peer dependency |
+| ------------------- | ---------------------------------------------------- | --------------- |
+| `ssr-kit`           | Routes, hooks, `Link`, `Form`, `Outlet`, `Head`      | `react` 19      |
+| `ssr-kit/vite`      | `ssrKit()` plugin, `fsRoutes()`, `createDevServer()` | `vite` 8        |
+| `ssr-kit/node`      | Express, Connect, `node:http`                        | none            |
+| `ssr-kit/fastify`   | Fastify plugin                                       | `fastify` 5     |
+| `ssr-kit/hono`      | Hono middleware                                      | `hono` 4        |
+| `ssr-kit/web`       | `Request → Response` on Node, Bun, Deno              | none            |
+| `ssr-kit/edge`      | Cloudflare Workers, Vercel Edge (no `node:*`)        | none            |
+| `ssr-kit/server`    | `handleRequest()`, low-level `render()`              | none            |
+| `ssr-kit/prerender` | Static HTML (CLI: `ssr-kit-prerender`)               | none            |
+
+Only install the peers you use. Node 22+.
+
+## Quick start
+
+**1. Vite plugin**
 
 ```ts
 // vite.config.ts
-import react from '@vitejs/plugin-react';
-import { ssrKit } from 'ssr-kit/vite';
-import { defineConfig } from 'vite';
+import react from "@vitejs/plugin-react";
+import { ssrKit } from "ssr-kit/vite";
+import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [react(), ssrKit({ routes: './src/routes.ts', document: './src/Document.tsx' })],
+  plugins: [react(), ssrKit({ routes: "./src/routes.ts", document: "./src/Document.tsx" })],
 });
 ```
 
+**2. Routes as code**
+
 ```ts
 // src/routes.ts
-import { defineRoutes } from 'ssr-kit';
+import { defineRoutes } from "ssr-kit";
 
 export default defineRoutes([
   {
-    id: 'root',
-    module: () => import('./pages/RootLayout'),
-    children: [{ path: 'gold/:id', module: () => import('./pages/GoldDetail') }],
+    id: "root",
+    module: () => import("./pages/Layout"),
+    children: [
+      { path: "/", module: () => import("./pages/Home") },
+      { path: "gold/:id", module: () => import("./pages/Gold") },
+    ],
   },
 ]);
 ```
 
+**3. A route module**
+
 ```tsx
-// src/pages/GoldDetail.tsx
-import { type LoaderArgs, notFound, useLoaderData } from 'ssr-kit';
+// src/pages/Gold.tsx
+import { Suspense, use } from "react";
+import { type LoaderArgs, notFound, useLoaderData } from "ssr-kit";
 
-import { findGold } from '../data.server'; // *.server 파일은 클라 번들에 들어가면 빌드 에러
+import { findGold, priceHistory } from "../db.server"; // never reaches the browser
 
-export const loader = async ({ params, headers }: LoaderArgs<'/gold/:id'>) => {
+export const loader = async ({ params, headers }: LoaderArgs<"/gold/:id">) => {
   const gold = await findGold(params.id);
   if (!gold) notFound();
-  headers.set('Cache-Control', 'private, max-age=0');
-  return { gold };
+  headers.set("Cache-Control", "private, max-age=0");
+  // not awaited: the shell is sent now, the chart streams in later
+  return { gold, history: priceHistory(params.id) };
 };
 
 export const head = ({ data }: { data: { gold: { name: string } } }) => ({ title: data.gold.name });
 
-export default function GoldDetail() {
-  const { gold } = useLoaderData<typeof loader>();
-  return <h1>{gold.name}</h1>;
+function Chart({ history }: { history: Promise<number[]> }) {
+  return <p>{use(history).join(" → ")}</p>;
+}
+
+export default function Gold() {
+  const { gold, history } = useLoaderData<typeof loader>();
+  return (
+    <main>
+      <h1>{gold.name}</h1>
+      <Suspense fallback={<p>Loading chart…</p>}>
+        <Chart history={history} />
+      </Suspense>
+    </main>
+  );
 }
 ```
+
+**4. Mount it on your server**
 
 ```ts
 // server.ts
-import express from 'express';
-import { createSsrHandler } from 'ssr-kit/node';
+import express from "express";
+import { createSsrHandler } from "ssr-kit/node";
 
 const app = express();
-if (process.env.NODE_ENV === 'production') {
-  app.use('/assets', express.static('dist/client/assets', { immutable: true, maxAge: '1y' }));
-  app.use(express.static('dist/client', { index: false }));
-  const { build } = await import('./dist/server/entry.js');
+
+if (process.env.NODE_ENV === "production") {
+  app.use("/assets", express.static("dist/client/assets", { immutable: true, maxAge: "1y" }));
+  app.use(express.static("dist/client", { index: false }));
+  const { build } = await import("./dist/server/entry.js");
   app.use(createSsrHandler({ build }));
 } else {
-  const { createDevServer } = await import('ssr-kit/vite');
+  const { createDevServer } = await import("ssr-kit/vite");
   const dev = await createDevServer({ root: import.meta.dirname });
   app.use(dev.middlewares);
-  app.use(async (req, res, next) =>
-    createSsrHandler({ build: await dev.getBuild() })(req, res, next),
-  );
+  app.use(async (req, res, next) => createSsrHandler({ build: await dev.getBuild() })(req, res, next));
 }
+
 app.listen(3000);
 ```
 
-전체 예제는 [packages/example](https://github.com/Ahnseungc/ssr-kit/tree/main/packages/example).
+`vite build` writes `dist/client` and `dist/server/entry.js`. Your API routes and middleware stay plain Express.
 
-### 타입 안전 링크
+<details>
+<summary><b>Cloudflare Workers</b></summary>
 
-`ssrKit({ routes, routesDts: true })` 가 routes 파일의 라우트 패턴을 `.ssr-kit/routes.d.ts` 로 생성한다.
-tsconfig `include` 에 **파일 경로로** 넣으면(`".ssr-kit/routes.d.ts"`, 점 폴더는 `**/*` 에 안 잡힌다)
-`<Link to>`·`useNavigate()` 가 등록된 경로만 받는다. 넣지 않으면 지금처럼 `string`.
+```ts
+// worker.ts
+import { createEdgeHandler } from "ssr-kit/edge";
+import { build } from "./dist/server/entry.js";
 
-```tsx
-<Link to="/gold/1?tab=a#x" />;            // OK
-<Link to="/gol/1" />;                     // 컴파일 에러
-<Link to={href('/gold/:id', { id })} />;  // 파라미터 인코딩·누락 검사
+const handle = createEdgeHandler({ build });
+
+export default {
+  async fetch(request: Request, env: { ASSETS: Fetcher }) {
+    return (await handle(request)) ?? env.ASSETS.fetch(request);
+  },
+};
 ```
 
-## 저장소 구성
+```jsonc
+// wrangler.jsonc
+{
+  "main": "worker.ts",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": "dist/client", "binding": "ASSETS" }
+}
+```
 
-| 경로 | 내용 |
-|---|---|
-| `packages/core` | 배포 패키지 `ssr-kit` (`ssr-kit`, `/server`, `/client`, `/node`, `/vite`) |
-| `packages/example` | Express 예제 앱 + Playwright E2E |
-| `docs/` | PRD·기술 스펙 |
+Streamed documents are sent with `Content-Encoding: identity` so the runtime does not hold them back for compression.
+
+</details>
+
+<details>
+<summary><b>Hono</b></summary>
+
+```ts
+import { Hono } from "hono";
+import { ssrKit } from "ssr-kit/hono";
+
+const app = new Hono();
+app.get("/api/ping", (c) => c.text("pong"));
+app.use("*", ssrKit({ build })); // unmatched requests fall through to your routes
+```
+
+</details>
+
+<details>
+<summary><b>Fastify</b></summary>
+
+```ts
+import Fastify from "fastify";
+import { ssrKit } from "ssr-kit/fastify";
+
+const app = Fastify();
+await app.register(ssrKit, { build });
+```
+
+</details>
+
+## Mutations
+
+```tsx
+// src/pages/Guestbook.tsx
+import { type ActionArgs, Form, redirect, useActionData, useNavigation } from "ssr-kit";
+
+export const action = async ({ request }: ActionArgs<"/guestbook">) => {
+  const form = await request.formData();
+  const message = String(form.get("message") ?? "").trim();
+  if (!message) return { error: "Write something" };
+  await save(message);
+  redirect("/guestbook"); // Post/Redirect/Get, sent as 303
+};
+
+export default function Guestbook() {
+  const result = useActionData<typeof action>();
+  const busy = useNavigation().state === "submitting";
+  return (
+    <Form method="post">
+      <input name="message" />
+      <button disabled={busy}>{busy ? "Sending…" : "Send"}</button>
+      {result?.error && <p role="alert">{result.error}</p>}
+    </Form>
+  );
+}
+```
+
+The action runs inside the route middleware, then the loaders run again in the same response. Requests from another origin get `403`.
+
+## Middleware
+
+```ts
+// src/pages/Admin.tsx
+import { type Middleware, redirect } from "ssr-kit";
+
+export const middleware: Middleware = async ({ request, context }, next) => {
+  const user = await getSession(request); // from a *.server.ts module
+  if (!user) redirect(`/login?next=${request.url.pathname}`);
+  context.user = user; // loaders and actions get the same context
+  await next();
+};
+```
+
+Middleware runs root to leaf on every document, data, and action request, so client navigation cannot skip a guard.
+
+## API
+
+| API                                         | What it does                                                                                                   |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `defineRoutes(routes)`                      | Route tree: `path` (`:id`, `:lang?`, `*`), `module`, `children`, `ssr: false`                                  |
+| `loader` / `action` / `middleware`          | Server-only route-module exports                                                                               |
+| `head` / `ErrorBoundary`                    | Route-module exports for `<head>` tags and errors                                                              |
+| `useLoaderData()` / `useActionData()`       | Data for the current route, typed with `typeof loader` / `typeof action`                                       |
+| `useRouteLoaderData(id)`                    | Data of another matched route                                                                                  |
+| `useNavigation()`                           | `{ state: "idle" \| "loading" \| "submitting", location, formData }`                                          |
+| `useNavigate()` / `useRevalidate()`         | Navigate in code / run the current loaders again                                                               |
+| `useSubmit()`                               | Submit `FormData` or an object from code                                                                       |
+| `useParams()` / `useLocation()`             | Route params and location                                                                                      |
+| `<Link to prefetch>` / `<Form>`             | Client navigation / mutations that also work without JavaScript                                                |
+| `<Outlet>` / `<Head>`                       | Child route slot / merged head tags (put it in your `Document`)                                                |
+| `redirect()` / `notFound()` / `httpError()` | Throw from loaders, actions, and middleware                                                                    |
+| `href(pattern, params)`                     | Build a URL from a route pattern                                                                               |
+| `createSsrHandler(options)`                 | Node handler. Options: `getContext`, `renderTimeout`, `getNonce`, `onError`, `serverTiming`, `allowedOrigins` |
+
+The full design is in the [spec](https://github.com/Ahnseungc/ssr-kit/blob/main/docs/specs/ssr-kit/spec.md). What is verified, and how, is in the [verification table](https://github.com/Ahnseungc/ssr-kit/blob/main/docs/specs/ssr-kit/verification.md).
+
+## Run the demo
+
+The example app in [`packages/example`](https://github.com/Ahnseungc/ssr-kit/tree/main/packages/example) covers streaming, mutations, middleware, error boundaries, TanStack Query, and old-WebView bundles.
 
 ```bash
 pnpm install
-pnpm build          # ssr-kit 빌드
-pnpm test           # 단위 테스트 (Vitest)
-pnpm example:build  # 예제 앱 빌드
-pnpm e2e            # 예제 앱 prod 서버 E2E (Playwright)
+pnpm build && pnpm example:build
+pnpm --filter ssr-kit-example start      # Express → http://localhost:3000
+pnpm --filter ssr-kit-example demo:dev   # Cloudflare Workers (local) → http://localhost:4600
 ```
 
-예제 dev 서버: `pnpm --filter ssr-kit-example dev` → http://localhost:3000
+Open `/stream?delay=2000` to watch the shell arrive before the data. `node packages/example/scripts/record-demo.mjs` records the GIF above.
 
-## 진행 상황
+## Contributing
 
-구현: 코드 라우팅·우선순위·params 타입, 병렬 로더·redirect·에러 경계·헤더 병합, 스트리밍 SSR + document hydrate,
-Promise 데이터 스트리밍(`use()`), 데이터 엔드포인트(`/_data/*`), head 병합, 클라 이동·프리패치·스크롤 복원, `ssr: false` 셸,
-Vite 8 Environment API 빌드·dev 서버, 클라 번들 `loader` 제거·`*.server` 차단, 라우트 모듈 Fast Refresh,
-CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), 타입 안전 링크(`href`, `routesDts`), prerender(`ssr-kit-prerender`, HTML + 데이터 JSON),
-dev 5xx 에러 Vite 오버레이, 어댑터 Node·Fastify·Hono·Web·Edge(Workers, `node:*` 없음),
-라우트 미들웨어(문서·데이터·action 요청 모두, 클라 번들 제거), Server-Timing·`onTiming`,
-데이터 변경 `action`·`<Form>`·`useSubmit`·`useActionData`·`useNavigation().state === 'submitting'`(Origin CSRF 검사, 클라 번들 `action` 제거),
-`@vitejs/plugin-legacy` 연동(구형 Android WebView 용 nomodule 번들을 문서 끝에 붙임, 스펙 §6.6.1).
+```bash
+pnpm install
+pnpm build          # build ssr-kit
+pnpm lint && pnpm typecheck
+pnpm test:coverage  # Vitest, core/server line coverage ≥ 90%
+pnpm size           # runtime size budget
+pnpm example:build && pnpm e2e   # Playwright against the production build
+```
 
-| 서브패스 | 내용 |
-|---|---|
-| `ssr-kit` | 라우트 정의·훅·`Link`·`Form`·`Outlet`·`Head`·`href` |
-| `ssr-kit/node` | Express·Connect 핸들러 |
-| `ssr-kit/fastify` · `ssr-kit/hono` · `ssr-kit/web` | 프레임워크 어댑터 |
-| `ssr-kit/edge` | Workers·Vercel Edge 용 `Request → Response` (Web 스트림 렌더러) |
-| `ssr-kit/server` | `handleRequest`, 저수준 `render()` |
-| `ssr-kit/client` | `hydrate`, `readSsrData` |
-| `ssr-kit/vite` | `ssrKit`, `fsRoutes`, `createDevServer` |
-| `ssr-kit/prerender` | `prerender()` (CLI `ssr-kit-prerender`) |
+## License
 
-## 라이선스
-
-MIT
+[MIT](https://github.com/Ahnseungc/ssr-kit/blob/main/LICENSE)
