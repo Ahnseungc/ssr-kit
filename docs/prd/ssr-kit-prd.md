@@ -1,7 +1,7 @@
 # PRD — ssr-kit (Node 기반 React SSR 플러그인)
 
 - 작성: 안승찬 · 2026-11-11
-- 상태: Draft v0.1
+- 상태: Draft v0.1 (기술 결정은 [spec.md](../specs/ssr-kit/spec.md) 가 우선)
 - 레포: github.com/Ahnseungc/ssr-kit
 
 ---
@@ -76,19 +76,20 @@ React Router v7·Vike 가 가장 가까운 대안이다. 차별점은 ① 라우
    app.get('*', createSsrHandler({ routes }));
    app.listen(3000);
    ```
-2. **라우트 정의 — 코드로**
+2. **라우트 정의 — 코드로, 로더는 라우트 모듈에**
    ```ts
+   // routes.ts
    export const routes = defineRoutes([
-     {
-       path: '/gold/:id',
-       component: () => import('./pages/GoldDetail'),
-       loader: async ({ params, req }) => {
-         const data = await fetchGold(params.id, { cookie: req.headers.cookie });
-         return { data, headers: { 'Cache-Control': 'private, max-age=0' } };
-       },
-       head: ({ data }) => ({ title: data.name }),
-     },
+     { path: '/gold/:id', module: () => import('./pages/GoldDetail') },
    ]);
+
+   // pages/GoldDetail.tsx — loader 는 빌드 시 클라 번들에서 제거
+   export const loader = async ({ params, request, headers }: LoaderArgs<'/gold/:id'>) => {
+     headers.set('Cache-Control', 'private, max-age=0');
+     return { data: await fetchGold(params.id, { cookie: request.headers.get('cookie') }) };
+   };
+   export const head = ({ data }: HeadArgs<typeof loader>) => ({ title: data.data.name });
+   export default function GoldDetail() { /* useLoaderData<typeof loader>() */ }
    ```
 3. **컴포넌트에서 데이터 사용** — `useLoaderData<typeof loader>()`, 타입 자동 추론.
 4. **클라이언트 이동** — `<Link>` 클릭 시 `/_data?path=...` JSON 요청 → 로더만 실행 → 클라이언트 렌더. 전체 문서 새로고침 없음.
@@ -169,7 +170,7 @@ React Router v7·Vike 가 가장 가까운 대안이다. 차별점은 ① 라우
 | SSR 오버헤드 | 동일 컴포넌트 기준 순수 `renderToPipeableStream` 대비 TTFB +5ms 이내 |
 | dev cold start | 100 라우트 기준 < 1.5s |
 | 프로덕션 빌드 | 동일 앱 Next 대비 50% 이하 시간 (골디 일부 페이지 이식으로 측정) |
-| 호환 | Node 22 LTS+, React 19.x, Vite 6+ |
+| 호환 | Node 22 LTS+, React 19.x, Vite 8+ |
 | 타입 | 라우트 파라미터·로더 데이터 end-to-end 타입 추론, `any` 노출 0 |
 | 테스트 | 코어 커버리지 90%+, 렌더 결과 스냅샷 + Playwright E2E 예제 앱 |
 | 보안 | 직렬화 데이터 `</script>` 이스케이프, 로더 코드 클라 번들 유출 0 (빌드 시 검증) |
@@ -191,11 +192,10 @@ HTML  + <script>window.__SSR_DATA__</script> + modulepreload(manifest)
 [브라우저] hydrateRoot → 이후 <Link> 이동 = GET {dataPrefix}?path= → 로더만 실행
 ```
 
-패키지 구성(모노레포, pnpm):
-- `ssr-kit` — 코어(라우트 매칭, 로더 실행, 직렬화, 렌더)
-- `ssr-kit/vite` — Vite 플러그인(환경 빌드, 코드 제거 변환, manifest)
-- `ssr-kit/node`, `ssr-kit/fastify`, `ssr-kit/hono` — 어댑터
-- `examples/` — express-basic, webview-legacy-android, tanstack-query
+패키지 구성(pnpm 모노레포, WebViewKit 레포와 같은 구조):
+- `packages/core` — 배포 패키지 `ssr-kit`. 서브패스 `ssr-kit`(공용) · `/server` · `/client` · `/node` · `/vite`
+- `packages/example` — Express 예제 앱 + E2E
+- Fastify·Hono 어댑터는 P1 에 `ssr-kit/fastify`, `ssr-kit/hono` 서브패스로 추가
 
 설계 원칙:
 1. **모든 확장 지점은 함수 인자** — 전역 설정 파일·매직 export 없음.
@@ -230,7 +230,7 @@ HTML  + <script>window.__SSR_DATA__</script> + modulepreload(manifest)
 
 ## 13. 미결 질문
 
-1. 패키지 이름 — `ssr-kit` 확정 (2026-11-11 npm `ssr-kit`·`ssrkit`·`ssr_kit` 미사용 확인). 첫 배포 전까지 선점 안 되면 그대로 사용, 막히면 `@ahnseungc/ssr-kit` 스코프로.
+1. 패키지 이름 — `ssr-kit` 확정 (2026-11-11 npm `ssr-kit`·`ssrkit`·`ssr_kit` 미사용 확인). 첫 배포 전까지 선점 안 되면 그대로 사용, 막히면 개인 스코프 `@ahnseungchan/ssr-kit` 으로 (2026-11-11 미사용 확인).
 2. 데이터 엔드포인트 방식 — `?_data` 쿼리 vs `/_data/*` prefix vs `Accept` 헤더 협상.
 3. 로더 타입 추론 — `typeof loader` 제네릭 vs 라우트 ID 기반 레지스트리(TanStack 방식).
 4. 클라이언트 라우터를 자체 구현할지, 외부 라우터를 1급으로 지원하고 자체는 최소로 둘지.
