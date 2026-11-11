@@ -26,7 +26,7 @@ const encoder = new TextEncoder();
 const hasNoBody = (status: number, method: string) =>
   NULL_BODY_STATUS.has(status) || method === 'HEAD';
 
-/** React 출력 끝에 settle 스크립트를 붙이는 TransformStream */
+/** React 출력 끝에 tailHtml 과 settle 스크립트를 (이 순서로) 붙이는 TransformStream */
 const appendDeferred = (entries: DeferredEntry[], options: TreeRenderOptions) => {
   const timeout = createTimeout(options.renderTimeout);
   const scriptOptions = {
@@ -45,6 +45,7 @@ const appendDeferred = (entries: DeferredEntry[], options: TreeRenderOptions) =>
   scripts.catch(() => {});
   return new TransformStream<Uint8Array, Uint8Array>({
     async flush(controller) {
+      if (options.tailHtml) controller.enqueue(encoder.encode(options.tailHtml));
       for (const script of await scripts) controller.enqueue(encoder.encode(script));
     },
   });

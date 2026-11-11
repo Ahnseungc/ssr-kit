@@ -12,6 +12,8 @@ export interface DeferredWriterOptions {
   entries: DeferredEntry[];
   dev: boolean;
   nonce?: string;
+  /** React 출력이 끝나면 한 번 붙인다 (남은 settle 스크립트보다 먼저) */
+  tail?: string;
   timeoutMs: number;
   onError: (error: unknown) => void;
 }
@@ -64,6 +66,9 @@ export class DeferredWriter extends Writable {
   }
 
   override _final(callback: (error?: Error) => void) {
+    // React 가 끝났으니 태그 경계다. 레거시 부트스트랩이 느린 Promise 를 기다리지 않게 바로 붙인다
+    this.flush();
+    if (this.options.tail) this.target.write(this.options.tail);
     this.done.then(() => {
       this.flush();
       this.target.end();

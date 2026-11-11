@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 
 import type { DocumentProps, RouteDef } from '../core/types';
+import { nonceAttribute } from './payload';
 
 export interface AssetManifest {
   entry: { file: string; css: string[] };
@@ -24,6 +25,11 @@ export interface ServerBuild {
   bootstrapModules: string[];
   /** 매치된 라우트 모듈 키 → 프리로드할 에셋 */
   resolveAssets: (files: string[]) => ResolvedAssets | Promise<ResolvedAssets>;
+  /**
+   * React 출력이 끝난 뒤 문서 끝에 붙일 HTML (예: @vitejs/plugin-legacy 의 nomodule 스크립트).
+   * 요청 nonce 를 받아 만든다. HEAD 응답에는 붙지 않는다
+   */
+  tailHtml?: (nonce?: string) => string;
   /** dev: Vite 소스맵 기준으로 스택 보정 */
   fixStacktrace?: (error: Error) => void;
 }
@@ -52,3 +58,9 @@ export const createManifestAssets = (
     },
   };
 };
+
+/** nonce 자리로 나뉜 조각을 요청 nonce 로 이어 붙이는 tailHtml */
+export const createTailHtml =
+  (parts: string[]): NonNullable<ServerBuild['tailHtml']> =>
+  (nonce) =>
+    parts.join(nonceAttribute(nonce));

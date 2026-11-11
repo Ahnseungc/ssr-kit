@@ -105,7 +105,8 @@ pnpm e2e            # 예제 앱 prod 서버 E2E (Playwright)
 Promise 데이터 스트리밍(`use()`), 데이터 엔드포인트(`/_data/*`), head 병합, 클라 이동·프리패치·스크롤 복원, `ssr: false` 셸,
 Vite 8 Environment API 빌드·dev 서버, 클라 번들 `loader` 제거·`*.server` 차단, 라우트 모듈 Fast Refresh,
 CSP nonce, 저수준 `render()`, 파일 기반 라우팅(`fsRoutes`), prerender(`ssr-kit-prerender`, HTML + 데이터 JSON),
-dev 5xx 에러 Vite 오버레이, 어댑터 Node·Fastify·Hono·Web·Edge(Workers, `node:*` 없음).
+dev 5xx 에러 Vite 오버레이, 어댑터 Node·Fastify·Hono·Web·Edge(Workers, `node:*` 없음),
+`@vitejs/plugin-legacy` 연동(구형 Android WebView 용 nomodule 번들을 문서 끝에 붙임, 스펙 §6.6.1).
 
 | 서브패스 | 내용 |
 |---|---|

@@ -86,4 +86,29 @@ describe('Vite 빌드 통합 (fsRoutes + ssrKit)', () => {
     },
     BUILD_TIMEOUT_MS,
   );
+
+  it(
+    '@vitejs/plugin-legacy: 모던 엔트리로 부트스트랩하고 레거시 폴리필·엔트리를 tailHtml 로 낸다',
+    async () => {
+      const builder = await createBuilder({
+        root,
+        configFile: path.join(root, 'vite.legacy.config.ts'),
+      });
+      await builder.buildApp();
+      const server = readFileSync(path.join(root, 'out/legacy-server/entry.js'), 'utf8');
+      expect(server).toContain('createTailHtml');
+      expect(server).toMatch(
+        /nomodule crossorigin id=\\"vite-legacy-polyfill\\" src=\\"\/cdn\/assets\/polyfills-legacy-/,
+      );
+      expect(server).toMatch(
+        /id=\\"vite-legacy-entry\\" data-src=\\"\/cdn\/assets\/client-entry-legacy-/,
+      );
+      // 부트스트랩·라우트 프리로드는 모던 청크 (레거시 엔트리도 isEntry 라 골라야 한다)
+      expect(server).toMatch(/"file": "assets\/client-entry-(?!legacy)[\w-]+\.js"/);
+      expect(server).not.toMatch(/"file": "assets\/[\w-]+-legacy-[\w-]+\.js"/);
+      const client = readdirSync(path.join(root, 'out/legacy-client/assets'));
+      expect(client.some((file) => file.startsWith('client-entry-legacy-'))).toBe(true);
+    },
+    BUILD_TIMEOUT_MS,
+  );
 });

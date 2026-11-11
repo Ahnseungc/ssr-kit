@@ -115,6 +115,7 @@ const renderDocument = (
       data: input.state.payload,
       dev: build.dev,
       nonce: options.nonce,
+      tailHtml: build.tailHtml?.(options.nonce),
       isBot: options.isBot,
       renderTimeout: options.renderTimeout,
       report: (phase, error) => report(build, options, request, phase, error),

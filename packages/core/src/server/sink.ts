@@ -11,6 +11,8 @@ export interface TreeRenderOptions {
   data: unknown;
   dev: boolean;
   nonce?: string;
+  /** React 출력이 끝난 뒤 한 번 붙일 HTML (nonce 적용된 것) */
+  tailHtml?: string;
   /** true 면 Suspense 까지 모두 끝난 뒤 보낸다 */
   isBot: boolean;
   renderTimeout: number;
