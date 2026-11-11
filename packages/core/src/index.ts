@@ -13,6 +13,8 @@ export type {
   LoaderArgs,
   LoaderData,
   MetaTag,
+  Middleware,
+  MiddlewareArgs,
   Params,
   RouteDef,
   RouteError,

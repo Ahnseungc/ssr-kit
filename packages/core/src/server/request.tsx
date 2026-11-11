@@ -1,8 +1,8 @@
 import { preinit, preloadModule } from 'react-dom';
 
 import { isReportable, toRouteError } from '../core/errors';
-import { runLoaders } from '../core/loaders';
 import { createMatcher, InvalidPathError, type Matcher } from '../core/match';
+import { runRoute, type RunRouteOptions } from '../core/middleware';
 import { serialize } from '../core/serialize';
 import type {
   AppContext,
@@ -17,6 +17,13 @@ import { RequestContextContext, type RouterState, RouterStateContext } from '../
 import type { ResolvedAssets, ServerBuild } from './build';
 import { serializeSettledPayload } from './payload';
 import type { ErrorPhase, RenderSink } from './sink';
+import {
+  loaderTimingName,
+  MIDDLEWARE_TIMING,
+  RequestTiming,
+  SHELL_TIMING,
+  type TimingEntry,
+} from './timing';
 
 export type { ErrorPhase, RenderSink, TreeRenderOptions } from './sink';
 
@@ -26,6 +33,9 @@ export interface HandleOptions {
   renderTimeout: number;
   nonce?: string;
   onError?: (error: unknown, info: { url: string; phase: ErrorPhase }) => void;
+  /** Server-Timing 응답 헤더 */
+  serverTiming?: boolean;
+  onTiming?: (entries: TimingEntry[], info: { url: string }) => void;
   /** 매치 없을 때: 'next' 면 'unmatched' 반환, 'render' 면 404 렌더 */
   unmatched: 'next' | 'render';
 }
@@ -80,6 +90,7 @@ const jsonResponse = (sink: RenderSink, status: number, headers: Headers, body: 
 };
 
 interface DocumentInput {
+  timing: RequestTiming;
   state: RouterState;
   status: number;
   headers: Headers;
@@ -100,8 +111,9 @@ const renderDocument = (
   options: HandleOptions,
   input: DocumentInput,
   isFallback = false,
-): Promise<void> =>
-  sink.renderTree(
+): Promise<void> => {
+  const start = performance.now();
+  return sink.renderTree(
     <RequestContextContext value={input.context}>
       <RouterStateContext value={input.state}>
         <ServerRoot build={build} assets={input.assets} />
@@ -117,6 +129,10 @@ const renderDocument = (
       nonce: options.nonce,
       isBot: options.isBot,
       renderTimeout: options.renderTimeout,
+      onHead: (headers) => {
+        input.timing.add(SHELL_TIMING, performance.now() - start);
+        if (options.serverTiming) input.timing.apply(headers);
+      },
       report: (phase, error) => report(build, options, request, phase, error),
       onShellError: (error) => {
         if (isFallback) return textResponse(sink, 500, 'Internal Server Error');
@@ -131,6 +147,7 @@ const renderDocument = (
       },
     },
   );
+};
 
 const rootErrorInput = (
   build: ServerBuild,
@@ -188,11 +205,29 @@ const matchOrInvalid = (build: ServerBuild, pathname: string, sink: RenderSink) 
   }
 };
 
+/** 미들웨어 → 로더. loaderPhase: 로더 에러를 보고할 단계 (문서 'loader', 데이터 'data') */
+const runMatched = (
+  build: ServerBuild,
+  options: HandleOptions,
+  timing: RequestTiming,
+  loaderPhase: ErrorPhase,
+  route: Pick<RunRouteOptions, 'matches' | 'modules' | 'request' | 'context' | 'signal'>,
+) =>
+  runRoute({
+    ...route,
+    dev: build.dev,
+    onError: (error, source) =>
+      report(build, options, route.request, source === 'middleware' ? source : loaderPhase, error),
+    onTiming: (name, ms) =>
+      timing.add(name === 'middleware' ? MIDDLEWARE_TIMING : loaderTimingName(name.routeId), ms),
+  });
+
 const handleData = async (
   build: ServerBuild,
   request: SsrRequest,
   sink: RenderSink,
   options: HandleOptions,
+  timing: RequestTiming,
 ): Promise<HandleResult> => {
   if (request.method !== 'GET') {
     textResponse(sink, 405, 'Method Not Allowed');
@@ -212,15 +247,14 @@ const handleData = async (
 
   const modules = await loadModules(matched.matches);
   const context = (await options.getContext?.(pageRequest)) ?? {};
-  const result = await runLoaders({
+  const result = await runMatched(build, options, timing, 'data', {
     matches: matched.matches,
     modules,
     request: pageRequest,
     context,
     signal: sink.signal,
-    dev: build.dev,
-    onError: (error) => report(build, options, pageRequest, 'data', error),
   });
+  if (options.serverTiming) timing.apply(result.headers);
 
   if (result.type === 'redirect') {
     const body = JSON.stringify({ type: 'redirect', to: result.to, status: result.status });
@@ -248,16 +282,13 @@ const noStoreOnError = (status: number, headers: Headers) => {
 const isDataRequest = (build: ServerBuild, pathname: string) =>
   pathname === build.dataPrefix || pathname.startsWith(`${build.dataPrefix}/`);
 
-export const handleRequest = async (
+const handleDocument = async (
   build: ServerBuild,
   request: SsrRequest,
   sink: RenderSink,
   options: HandleOptions,
+  timing: RequestTiming,
 ): Promise<HandleResult> => {
-  if (isDataRequest(build, request.url.pathname)) {
-    return handleData(build, request, sink, options);
-  }
-
   const matched = matchOrInvalid(build, request.url.pathname, sink);
   if (!matched) return 'handled';
   const { matches } = matched;
@@ -269,6 +300,7 @@ export const handleRequest = async (
       status: 404,
       headers: new Headers({ 'cache-control': 'no-store' }),
       context: null,
+      timing,
       assets: await build.resolveAssets([]),
     });
     return 'handled';
@@ -284,23 +316,23 @@ export const handleRequest = async (
       status: 200,
       headers: new Headers({ 'cache-control': 'no-cache' }),
       context: null,
+      timing,
       assets,
     });
     return 'handled';
   }
 
   const context = (await options.getContext?.(request)) ?? {};
-  const result = await runLoaders({
+  const result = await runMatched(build, options, timing, 'loader', {
     matches,
     modules,
     request,
     context,
     signal: sink.signal,
-    dev: build.dev,
-    onError: (error) => report(build, options, request, 'loader', error),
   });
 
   if (result.type === 'redirect') {
+    if (options.serverTiming) timing.apply(result.headers);
     result.headers.set('location', result.to);
     sink.writeHead(result.status, result.headers);
     sink.end();
@@ -313,7 +345,22 @@ export const handleRequest = async (
     status: result.payload.status,
     headers: result.headers,
     context,
+    timing,
     assets,
   });
   return 'handled';
+};
+
+export const handleRequest = async (
+  build: ServerBuild,
+  request: SsrRequest,
+  sink: RenderSink,
+  options: HandleOptions,
+): Promise<HandleResult> => {
+  const timing = new RequestTiming();
+  const result = isDataRequest(build, request.url.pathname)
+    ? await handleData(build, request, sink, options, timing)
+    : await handleDocument(build, request, sink, options, timing);
+  if (timing.entries.length) options.onTiming?.(timing.entries, { url: request.url.href });
+  return result;
 };

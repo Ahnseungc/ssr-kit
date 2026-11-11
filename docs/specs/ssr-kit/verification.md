@@ -43,6 +43,8 @@
 | AD1 | Node·Express 핸들러 | 구현 | 단위 `node-handler` (실제 http 서버), E2E |
 | AD2 | Fastify·Hono | 구현 | 단위 `fastify`·`web` |
 | AD3 | Web `Request → Response` | 구현 | 단위 `web`·`edge` (edge 모듈 그래프 `node:*` 0) |
+| MW | 라우트 `middleware` (onion·가드·context) | 구현 | 단위 `middleware`·`middleware-handler`·`strip`, E2E `/admin` (문서 302·클라 이동·쿠키 통과·번들 제거) |
+| OB | Server-Timing·`onTiming` | 구현 | 단위 `middleware-handler` (Web·Edge·Node HEAD, 기본값 dev, 이름 정규화), E2E (prod 기본 미전송) |
 
 ## 2. 비기능 요구사항
 

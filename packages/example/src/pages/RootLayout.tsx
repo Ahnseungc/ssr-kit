@@ -4,12 +4,18 @@ import {
   type HeadArgs,
   Link,
   type LoaderArgs,
+  type Middleware,
   Outlet,
   type RouteError,
   useLoaderData,
   useNavigation,
   useRevalidate,
 } from 'ssr-kit';
+
+/** 모든 문서·데이터 요청에서 로더보다 먼저. 이후 로더는 같은 context 를 받는다 */
+export const middleware: Middleware = ({ context }) => {
+  context.requestStartedAt = Date.now();
+};
 
 export const loader = ({ context }: LoaderArgs) => ({
   renderedAt: new Date(),
@@ -50,6 +56,7 @@ export default function RootLayout() {
         <Link to="/shell">셸</Link>
         <Link to="/external">외부</Link>
         <Link to="/query">쿼리</Link>
+        <Link to="/admin">관리자</Link>
         <button type="button" onClick={revalidate}>
           새로고침
         </button>

@@ -1,7 +1,7 @@
 # ssr-kit 기술 스펙
 
 - 작성: 안승찬 · 2026-11-11
-- 상태: v0.5 (재검증·코드 리뷰 반영, 2026-11-11)
+- 상태: v0.6 (라우트 미들웨어·Server-Timing 추가, 2026-11-11)
 - 근거: [ssr-kit-prd.md](../../prd/ssr-kit-prd.md) v0.1 — 요구사항 ID(R1, RT1, D1 …)는 PRD 표기를 그대로 쓴다.
 - 범위: M1(MVP, P0) 구현에 필요한 결정 전부 + P1 은 인터페이스만 고정.
 - 기준 버전: React 19.3 · Vite 8.3 · @vitejs/plugin-react 6.3 · Node 22+
@@ -27,7 +27,7 @@
 | # | v0.1 문제 | v0.2 결정 | 반영 위치 |
 |---|---|---|---|
 | V1 | 서버는 `<html>` 전체, 클라는 `#root` 만 hydrate → `useId` 트리 위치 불일치 | **document 전체 hydrate**. React 19 는 `<head>`/`<body>` 의 낯선 태그(확장·WebView 주입)를 건너뜀 | §5.8, §8.1 |
-| V2 | `X-SSRK-Routes` 로 상위 로더 생략 → 클라가 헤더 조작 시 상위 로더의 인증 검사 우회 | **v1 에서 로더 생략 제거**. 인증은 `getContext`·사용자 미들웨어에서 | §5.6 |
+| V2 | `X-SSRK-Routes` 로 상위 로더 생략 → 클라가 헤더 조작 시 상위 로더의 인증 검사 우회 | **v1 에서 로더 생략 제거**. 인증은 `getContext`·사용자 미들웨어 또는 **라우트 `middleware`**(§5.9 — 문서·데이터 요청마다 매치 전부 실행)에서. 로더에 인증을 두지 않는다 | §5.6, §5.9 |
 | V3 | 클라 번들에 매니페스트 인라인 — client 가 먼저 빌드돼 해시를 알 수 없음 | 클라 매니페스트 없음. 프리패치는 `route.module()` 호출(Vite preload helper 가 CSS·의존 청크 처리) | §6.4, §8.3 |
 | V4 | `getBuild()` 동기 시그니처 vs 모듈 러너 `import()` 비동기 | `getBuild(): Promise<ServerBuild>` | §3.6, §6.5 |
 | V5 | 라우트 모듈의 비컴포넌트 export(`loader`, `head`) → React Refresh 경계 실패 → dev 전체 리로드 | M1 은 전체 리로드 허용·문서화, Fast Refresh 보존은 P1 요구사항 | §6.5 |
@@ -172,6 +172,7 @@ export default function GoldDetail() {
 |---|---|---|---|
 | `default` | 서버·클라 | O | 라우트 컴포넌트. 레이아웃은 `<Outlet />` 렌더 |
 | `loader` | **서버 전용** | X | 클라 번들에서 제거 (§6.3) |
+| `middleware` | **서버 전용** | X | 함수 또는 배열. 로더보다 먼저 실행 (§5.9). 클라 번들에서 제거 |
 | `head` | 서버·클라 | X | 클라 이동·hydrate 시에도 실행 (§5.7) |
 | `ErrorBoundary` | 서버·클라 | X | 이 라우트 이하 로더·렌더 에러 처리 |
 
@@ -202,6 +203,18 @@ export interface AppContext {}
 
 export type LoaderData<L> = L extends (...a: never[]) => infer R ? Awaited<R> : never;
 export interface HeadArgs<L> { data: LoaderData<L>; params: Record<string, string | undefined> }
+```
+
+```ts
+/** 라우트 미들웨어 (§5.9). context 는 이후 로더가 받는 것과 같은 객체 */
+export interface MiddlewareArgs<Path extends string = string> {
+  params: Params<Path>;
+  request: SsrRequest;
+  headers: Headers;   // 이 라우트 로더와 같은 객체 (§5.4 병합)
+  signal: AbortSignal;
+  context: AppContext;
+}
+export type Middleware = (args: MiddlewareArgs, next: () => Promise<void>) => Promise<void> | void;
 ```
 
 - Node 원본이 필요하면 `ssr-kit/node` 의 `getNodeRequest(request): IncomingMessage` 를 쓴다(사용자 미들웨어가 붙인 `req.user` 등).
@@ -244,9 +257,14 @@ export interface NodeHandlerOptions {
   getNonce?: (req: IncomingMessage) => string | undefined;
   /** E3 */
   onError?: (error: unknown, info: { url: string; phase: ErrorPhase }) => void;
+  /** Server-Timing 응답 헤더 (§5.10). 기본: build.dev */
+  serverTiming?: boolean;
+  /** 요청마다 측정값 (로깅용, §5.10) */
+  onTiming?: (entries: TimingEntry[], info: { url: string }) => void;
 }
 
-export type ErrorPhase = 'loader' | 'shell' | 'stream' | 'data';
+export type ErrorPhase = 'middleware' | 'loader' | 'shell' | 'stream' | 'data';
+export interface TimingEntry { name: string; dur: number }
 
 export function createSsrHandler(opts: NodeHandlerOptions):
   (req: IncomingMessage, res: ServerResponse, next?: (err?: unknown) => void) => Promise<void>;
@@ -378,10 +396,12 @@ export function href<P extends RoutePattern>(pattern: P, params?: Params<P>): Hr
 4  ssr:false 가 경로에 있으면 → §5.3
 5  modules = await Promise.all(matches.map(m => m.route.module()))
 6  context = await getContext(req)
-7  results = await Promise.allSettled(로더 있는 매치마다 loader(args))   ← D2 병렬
-8  redirect 가 있으면 가장 상위 매치의 redirect 로 응답, 종료
+7  runMiddleware(루트 → 리프, onion, §5.9) — 맨 안쪽에서 8 을 실행
+     redirect throw → 응답, 종료 / 에러 throw → 그 위쪽 로더만 실행, 9 로
+8  results = await Promise.allSettled(로더 있는 매치마다 loader(args))   ← D2 병렬
+   redirect 가 있으면 가장 상위 매치의 redirect 로 응답, 종료
 9  에러 → §5.5 로 errorIndex·status 결정
-10 status/headers 확정 (§5.4)
+10 status/headers 확정 (§5.4). serverTiming 이면 셸 직전에 Server-Timing (§5.10)
 11 renderToPipeableStream(<Document><App/></Document>, {
      bootstrapModules: [clientEntry], bootstrapScriptContent: 직렬화 데이터(§7), nonce,
      onShellReady, onAllReady, onShellError, onError })
@@ -428,6 +448,8 @@ export const loader = async () => ({ gold: await getGold(), chart: getChart() /*
 |---|---|---|
 | 로더 `httpError(s)` / `notFound()` | 해당 매치부터 위로 가장 가까운 `ErrorBoundary` 렌더. 그 아래 라우트는 렌더 안 함 | s / 404 |
 | 로더 일반 Error | 위와 같음 + `onError(phase: 'loader')` | 500 |
+| 미들웨어 `redirect()` | 로더 실행 없이 redirect (데이터 엔드포인트는 `type: 'redirect'`) | 3xx |
+| 미들웨어 `httpError`·일반 Error | 그 미들웨어의 라우트부터 위로 가장 가까운 `ErrorBoundary`. 그 아래 로더는 실행 안 함(위쪽 로더만 실행해 레이아웃 데이터 확보). 일반 Error 는 `onError(phase: 'middleware')` | s / 500 |
 | 여러 로더 실패 | **가장 상위** 실패 매치 기준 | 그 에러의 상태 |
 | 위쪽에 `ErrorBoundary` 없음 | 기본 루트 에러 UI (Document + 상태·메시지) | 그대로 |
 | 라우트 컴포넌트 렌더 throw | 서버: Suspense 경계 밖이면 `onShellError` → 기본 루트 에러 UI 로 재렌더. 클라: 매 라우트를 감싼 React 에러 경계가 가장 가까운 `ErrorBoundary` 렌더 | 500 |
@@ -451,7 +473,7 @@ type DataResponse =
 ```
 
 - Promise 대기에도 문서와 같은 `renderTimeout` 과 연결 종료(abort)를 적용한다. 시간 안에 안 끝나거나 직렬화할 수 없는 값은 reject 로 보내고 `onError(phase: 'data')` 로 보고한다.
-- **매치된 모든 로더를 실행한다.** 상위 로더 생략(v0.1 의 `X-SSRK-Routes`)은 인증 우회 위험(V2)으로 v1 에서 제외.
+- **매치된 모든 미들웨어·로더를 실행한다.** 자식 데이터만 필요한 이동이어도 루트 미들웨어부터 돈다. 상위 로더 생략(v0.1 의 `X-SSRK-Routes`)은 인증 우회 위험(V2)으로 v1 에서 제외.
 - 로더 에러도 `type: 'data'` 의 `payload.error` 로 보낸다(문서 응답과 같은 상태 코드).
 - redirect 는 HTTP 200 + `type: 'redirect'` (fetch 가 자동으로 따라가 문서 HTML 을 받는 걸 막기 위함).
 - 응답 헤더는 §5.4 규칙 그대로. 매치 없으면 404.
@@ -488,6 +510,34 @@ export const DefaultDocument = ({ children }: DocumentProps) => (
 ```
 - **document 전체를 hydrate** 한다: `hydrateRoot(document, <Root />)`. 서버·클라가 같은 트리(Document 포함)를 렌더하므로 `useId` 가 일치한다(V1).
 - 직렬화 데이터·부트스트랩 스크립트·에셋 프리로드는 React 트리 밖(`bootstrapScriptContent`, `bootstrapModules`, `preloadModule`/`preinit`)으로 출력해 hydrate 비교 대상이 아니다.
+
+### 5.9 라우트 미들웨어
+
+```ts
+// src/pages/Admin.tsx
+export const middleware: Middleware = async ({ request, context }, next) => {
+  const user = await getSession(request);           // *.server 모듈 import 가능 (클라에서 제거)
+  if (!user) redirect(`/login?next=${request.url.pathname}`);
+  context.user = user;                               // 이후 로더가 같은 context 를 받는다
+  await next();                                      // 생략 가능 — 끝나면 자동으로 다음
+};
+```
+
+- 실행: 매치 전체의 미들웨어를 **루트 → 리프** 순서로 onion 실행하고 맨 안쪽에서 로더(병렬)를 돌린다. `next()` 이후 코드는 로더가 끝난 뒤 리프 → 루트로 실행된다. 배열이면 배열 순서대로.
+- 문서·데이터 엔드포인트 요청 모두 실행한다. `ssr: false` 셸 문서는 로더처럼 건너뛴다(셸에는 데이터가 없고, 클라가 이어서 부르는 데이터 요청에서 실행된다).
+- `next()` 를 두 번 부르면 에러. 미들웨어가 throw 한 에러를 바깥 미들웨어가 삼켜도 **로더가 아직 안 돌았으면 실패로 처리**한다(가드 우회 방지). 로더가 끝난 뒤(next 이후) 에러를 바깥이 삼키면 성공.
+- `headers` 는 같은 라우트 로더와 같은 객체 — §5.4 병합 규칙 그대로. redirect·에러 응답에도 병합한다(Set-Cookie 유지).
+- **인증은 미들웨어에 둔다.** 로더와 달리 이동마다 매치된 모든 라우트에서 돈다는 계약이 있어, 나중에 상위 로더 생략(재검토 시)이 들어와도 인증이 빠지지 않는다(V2). 지금은 상위 로더 생략을 하지 않는다.
+- 내부 구현 `runMiddleware(matches, modules, args, inner)` (`core/middleware.ts`) 는 inner 를 받는 범용 파이프라인이라 다른 요청 종류(예: mutation)에도 재사용한다.
+- 클라: strip 이 `middleware` 를 지우고 `__ssrkLoader` 표시를 남긴다 → 로더가 없는 라우트도 이동 시 데이터 요청을 보내 미들웨어가 실행된다.
+
+### 5.10 Server-Timing·관측
+
+- 측정: 미들웨어 합계(로더 시간 제외) `mw`, 로더별 `loader-<routeId>`, 문서는 렌더 시작 → 셸(봇 모드면 전체) `shell`.
+- 헤더: `Server-Timing: mw;dur=1.2, loader-root;dur=3.4, loader-gold;dur=10.1, shell;dur=4.0`. 이름은 token 문자 외를 `-` 로(`gold/[id]` → `loader-gold--id-`), dur 은 소수 1자리.
+- 스트리밍 문서는 헤더가 셸과 함께 나가므로 **그 시점까지 측정한 값만** 들어간다(Suspense 스트리밍 시간은 없음). 렌더러가 헤더를 쓰기 직전에 부르는 `TreeRenderOptions.onHead` 로 붙인다. redirect·데이터 응답에도 붙는다(`shell` 없음).
+- 옵션 `serverTiming` 기본값은 `build.dev` — prod 에서 켜면 라우트 id·로더 지연이 외부에 보인다.
+- `onTiming(entries, { url })`: 헤더와 무관하게 요청마다 호출(문서는 셸이 나간 뒤, 데이터는 응답 뒤). 측정값이 없으면(매치 없음 등) 부르지 않는다.
 
 ## 6. Vite 플러그인 (`ssr-kit/vite`)
 
@@ -532,7 +582,7 @@ export const build = { routes, Document, manifest: /* §6.4 */, dataPrefix: '/_d
 
 client 환경 `transform`(일반 순서 — Vite 내장 TS 변환 이후라 타입 참조가 없다)에서 라우트 모듈에 대해:
 
-1. `oxc-parser` 로 파싱해 `export const loader` / `export function loader` / `export { loader }` 를 제거한다.
+1. `oxc-parser` 로 파싱해 서버 전용 export(`loader`, `middleware`)의 `export const` / `export function` / `export { … }` 를 제거한다.
 2. export 되지 않은 최상위 선언(함수·클래스·변수, 구조분해·부작용 있는 초기값 포함) 중 **원래는 참조되다가 로더를 지운 뒤 참조가 사라진 것**을 반복 제거한다(고정점까지). 로더 전용 헬퍼·DB 풀·비밀값이 서버 import 를 붙잡아 두는 걸 막기 위함. 처음부터 안 쓰이던 선언(의도된 부작용)은 남긴다.
 3. 참조가 사라진 import 바인딩 제거. 바인딩이 모두 사라진 import 문은 통째로 제거(사이드이펙트 import `import 'x'` 는 유지).
 4. `magic-string` 으로 소스맵 유지.
@@ -569,7 +619,7 @@ export function createDevServer(opts: { root: string; configFile?: string }): Pr
 - dev 에서 `bootstrapModules` 는 `['/@vite/client', '/@id/__x00__virtual:ssr-kit/client-entry']`. React Refresh preamble 은 client-entry 의 첫 import(`@vitejs/plugin-react/preamble`)로 해결해 HTML 주입이 필요 없다.
 - dev 에셋: 매치된 라우트 모듈의 ssr 모듈 그래프에서 CSS 모듈을 찾아 `preinit(url + '?direct', { as: 'style' })` — 첫 화면 FOUC 방지.
 - 에러: Vite 8 모듈 러너가 스택을 소스맵 기준으로 이미 고쳐 주므로 `ssrFixStacktrace` 를 부르지 않는다(중복 호출 시 Vite 가 메시지에 경고를 덧붙인다). 5xx 로더·렌더 에러는 클라 `hydrate`·이동 시 `customElements.get('vite-error-overlay')` 로 Vite 에러 오버레이를 띄운다(dev 에서만, 4xx 는 제외).
-- **Fast Refresh (V5):** 라우트 모듈은 `loader`·`head`·`__ssrkLoader` 같은 비컴포넌트 export 때문에 React Refresh 경계가 되지 못한다. 플러그인이 dev client 라우트 모듈 끝에 코드를 붙여 plugin-react 런타임의 `window.__getReactRefreshIgnoredExports` 로 이 export 들을 경계 검사에서 빼고, `import.meta.hot.accept` 에서 `revalidate()` 를 불러 서버 로더 변경도 반영한다. 컴포넌트 상태는 보존된다. `head` 변경은 다음 이동 때 반영된다.
+- **Fast Refresh (V5):** 라우트 모듈은 `loader`·`middleware`·`head`·`__ssrkLoader` 같은 비컴포넌트 export 때문에 React Refresh 경계가 되지 못한다. 플러그인이 dev client 라우트 모듈 끝에 코드를 붙여 plugin-react 런타임의 `window.__getReactRefreshIgnoredExports` 로 이 export 들을 경계 검사에서 빼고, `import.meta.hot.accept` 에서 `revalidate()` 를 불러 서버 로더 변경도 반영한다. 컴포넌트 상태는 보존된다. `head` 변경은 다음 이동 때 반영된다.
 
 ### 6.7 파일 기반 라우팅 (RT5)
 
@@ -700,7 +750,10 @@ export interface RenderSink {
 |---|---|
 | 직렬화 XSS | §7 이스케이프, 직렬화 결과를 `innerHTML` 로 쓰지 않음 |
 | 로더 코드 유출 | §6.3 제거 + `*.server`·`/server/` 차단 |
-| 상위 로더 인증 우회 | 데이터 요청도 매치 로더 전부 실행 (§5.6) |
+| 상위 로더 인증 우회 | 데이터 요청도 매치 미들웨어·로더 전부 실행 (§5.6). 인증은 라우트 `middleware` 에 (§5.9) |
+| 미들웨어 가드 우회 | 바깥 미들웨어가 가드 에러를 삼켜도 로더 미실행이면 실패 처리 (§5.9) |
+| 미들웨어 코드 유출 | `middleware` 도 §6.3 으로 클라 번들에서 제거 |
+| 내부 정보 노출 (Server-Timing) | prod 기본 off. 켜면 라우트 id·로더 지연 노출 (§5.10) |
 | 에러 메시지 노출 | prod 에서 일반 Error 메시지·스택 미전송 (§5.5) |
 | 개인화 HTML 캐시 | 기본 `Cache-Control: private, no-store` (§5.4) |
 | CSP | `getNonce` → `nonce` 옵션 (부트스트랩·데이터 스크립트) |

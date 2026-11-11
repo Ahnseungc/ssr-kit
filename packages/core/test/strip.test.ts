@@ -108,6 +108,55 @@ export default () => shared.label;
   it('여러 선언이 섞인 export const loader 는 에러', () => {
     expect(() => strip(`export const loader = () => 1, other = 2;`)).toThrow(/따로/);
   });
+
+  it('export const middleware (배열 포함) 와 미들웨어 전용 헬퍼·import 를 지우고 표시를 남긴다', () => {
+    const out = strip(`
+import { getSession } from './session.server';
+import { redirect } from 'ssr-kit';
+const requireUser = async ({ request }) => {
+  if (!(await getSession(request))) redirect('/login');
+};
+const log = () => {};
+export const middleware = [requireUser, log];
+export default function Page() { return null; }
+`);
+    expect(out).not.toContain('session.server');
+    expect(out).not.toContain('requireUser');
+    expect(out).not.toContain('ssr-kit');
+    expect(out).not.toMatch(/export const middleware/);
+    expect(out).toContain('export const __ssrkLoader = true;');
+  });
+
+  it('loader·middleware 를 함께 지우고, export { middleware } 지정자도 지운다', () => {
+    const out = strip(`
+import { db } from './db.server';
+import { auth } from './auth.server';
+function middleware() { return auth(); }
+export const loader = () => db.all();
+export { middleware };
+export const head = () => ({});
+export default () => null;
+`);
+    expect(out).not.toContain('db');
+    expect(out).not.toContain('auth');
+    expect(out).not.toContain('function middleware');
+    expect(out).toContain('export const head');
+  });
+
+  it('export function middleware 도 지운다', () => {
+    const out = strip(`
+export async function middleware(_args, next) { await next(); }
+export default () => null;
+`);
+    expect(out).not.toContain('function middleware');
+    expect(out).toContain('__ssrkLoader');
+  });
+
+  it('middleware 를 다른 선언과 한 문장에 쓰면 에러', () => {
+    expect(() => strip(`export const a = 1, middleware = () => {};`)).toThrow(
+      /export const middleware/,
+    );
+  });
 });
 
 describe('routes 파일', () => {

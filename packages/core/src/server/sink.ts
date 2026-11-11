@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type ErrorPhase = 'loader' | 'shell' | 'stream' | 'data';
+export type ErrorPhase = 'middleware' | 'loader' | 'shell' | 'stream' | 'data';
 
 export interface TreeRenderOptions {
   method: string;
@@ -15,6 +15,8 @@ export interface TreeRenderOptions {
   isBot: boolean;
   renderTimeout: number;
   report: (phase: ErrorPhase, error: unknown) => void;
+  /** 상태·헤더를 내보내기 직전(셸 준비 시점). Server-Timing 등 마지막 헤더 추가용 */
+  onHead?: (headers: Headers) => void;
   /** 셸 렌더 실패. 대체 응답을 쓰고 끝나면 resolve */
   onShellError: (error: unknown) => Promise<void> | void;
 }

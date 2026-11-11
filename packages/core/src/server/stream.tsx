@@ -20,6 +20,7 @@ const streamTree = (target: NodeTarget, tree: ReactNode, options: TreeRenderOpti
     const { headers } = options;
     headers.set('content-type', HTML_CONTENT_TYPE);
     if (options.method === 'HEAD') {
+      options.onHead?.(headers);
       target.writeHead(options.status, headers);
       target.stream.end();
       resolve();
@@ -39,6 +40,7 @@ const streamTree = (target: NodeTarget, tree: ReactNode, options: TreeRenderOpti
     const start = () => {
       if (started) return;
       started = true;
+      options.onHead?.(headers);
       target.writeHead(options.status, headers);
       stream.pipe(writer);
       resolve();

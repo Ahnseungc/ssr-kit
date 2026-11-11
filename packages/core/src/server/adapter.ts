@@ -2,6 +2,7 @@ import type { AppContext } from '../core/types';
 import type { ServerBuild } from './build';
 import type { HandleOptions } from './request';
 import type { ErrorPhase } from './sink';
+import type { TimingEntry } from './timing';
 
 /** 어댑터 공통 옵션. Req 는 어댑터 원본 요청 */
 export interface AdapterOptions<Req> {
@@ -14,6 +15,10 @@ export interface AdapterOptions<Req> {
   renderTimeout?: number;
   getNonce?: (req: Req) => string | undefined;
   onError?: (error: unknown, info: { url: string; phase: ErrorPhase }) => void;
+  /** 응답에 Server-Timing 헤더(미들웨어·로더별·셸 시간). 기본: dev 에서만 (prod 는 내부 정보 노출) */
+  serverTiming?: boolean;
+  /** 요청마다 측정값 (로깅용). 문서는 셸이 나간 뒤, 데이터는 응답 직후 */
+  onTiming?: (entries: TimingEntry[], info: { url: string }) => void;
 }
 
 const DEFAULT_RENDER_TIMEOUT_MS = 10_000;
@@ -36,6 +41,8 @@ export const toHandleOptions = <Req>(
     renderTimeout: options.renderTimeout ?? DEFAULT_RENDER_TIMEOUT_MS,
     nonce: options.getNonce?.(req),
     onError: options.onError,
+    serverTiming: options.serverTiming ?? options.build.dev,
+    onTiming: options.onTiming,
     unmatched,
   };
 };

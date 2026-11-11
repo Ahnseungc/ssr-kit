@@ -62,7 +62,7 @@ type Resolve = Rollup.PluginContext['resolve'];
 const cleanId = (id: string) => normalizePath(id.replace(/[?#].*$/, ''));
 
 /** 라우트 모듈의 비컴포넌트 export. React Refresh 경계 검사에서 뺀다 */
-const ROUTE_NON_COMPONENT_EXPORTS = ['loader', 'head', '__ssrkLoader'];
+const ROUTE_NON_COMPONENT_EXPORTS = ['loader', 'middleware', 'head', '__ssrkLoader'];
 
 /**
  * dev: 라우트 모듈을 React Refresh 경계로 인정받게 하고(상태 보존),
