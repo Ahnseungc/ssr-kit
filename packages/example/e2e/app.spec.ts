@@ -343,13 +343,16 @@ test('미들웨어 가드: 클라 이동도 데이터 요청에서 막혀 로그
   expect(await isSameDocument(page)).toBe(true);
 });
 
-test('미들웨어는 클라 번들에서 제거된다', () => {
+test('미들웨어는 클라 번들(모던·레거시 모두)에서 제거된다', () => {
   const dir = path.join(import.meta.dirname, '../dist/client/assets');
   const admin = readdirSync(dir).filter((file) => /^Admin-.*\.js$/.test(file));
-  expect(admin.length).toBe(1);
-  const text = readFileSync(path.join(dir, admin[0]!), 'utf8');
-  expect(text).not.toContain('/login?next=');
-  expect(text).toContain('__ssrkLoader');
+  // plugin-legacy 가 켜져 있어 모던 청크 + -legacy 청크
+  expect(admin.length).toBe(2);
+  for (const file of admin) {
+    const text = readFileSync(path.join(dir, file), 'utf8');
+    expect(text, file).not.toContain('/login?next=');
+    expect(text, file).toContain('__ssrkLoader');
+  }
 });
 
 test('prod 기본값은 Server-Timing 헤더를 보내지 않는다', async ({ request }) => {
