@@ -50,6 +50,7 @@ export default function RootLayout() {
         <Link to="/shell">셸</Link>
         <Link to="/external">외부</Link>
         <Link to="/query">쿼리</Link>
+        <Link to="/guestbook">방명록</Link>
         <button type="button" onClick={revalidate}>
           새로고침
         </button>
