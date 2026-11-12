@@ -62,7 +62,9 @@ describe('기본 루트 에러 경계', () => {
 
   it('라우트 ErrorBoundary 가 있으면 그쪽이 먼저 잡는다', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    const ErrorBoundary = ({ error }: { error: RouteError }) => <p>route boundary {error.status}</p>;
+    const ErrorBoundary = ({ error }: { error: RouteError }) => (
+      <p>route boundary {error.status}</p>
+    );
     renderRoot(stateOf([{ default: Boom, ErrorBoundary }]));
 
     expect(screen.getByText('route boundary 500')).toBeTruthy();

@@ -160,11 +160,7 @@ export const Root = ({ Document }: { Document: ComponentType<DocumentProps> }) =
   const error = state.payload.error;
   // 라우트 ErrorBoundary 가 하나도 잡지 못한 렌더 에러가 hydrateRoot(document) 를 통째로 지우지 않게
   let body: ReactNode = (
-    <RenderErrorCatcher
-      fallback={DefaultErrorPage}
-      resetKey={state.location.key}
-      dev={state.dev}
-    >
+    <RenderErrorCatcher fallback={DefaultErrorPage} resetKey={state.location.key} dev={state.dev}>
       <RouteView index={0} />
     </RenderErrorCatcher>
   );
