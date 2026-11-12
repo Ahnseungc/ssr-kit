@@ -2,6 +2,17 @@
 
 All notable changes to `ssr-kit` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A render error that no route `ErrorBoundary` catches no longer unmounts the whole document after hydration. It falls back to the default error page inside your `Document` (message hidden in production) and resets on the next navigation.
+
+### Documentation
+
+- Express: mount the handler once more without `next` to render the 404 page for unmatched URLs.
+- `action` receives POST, PUT, PATCH, and DELETE; check `request.method` to limit it.
+
 ## [0.1.0] - 2026-11-11
 
 First public release.

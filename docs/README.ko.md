@@ -38,7 +38,7 @@ Next.js 는 서버를 가져갑니다. ssr-kit 은 내 서버에 붙이는 함�
 - **타입 안전 링크**: 생성된 라우트 타입으로 `<Link to="/gol/1">` 같은 오타가 컴파일 에러가 됩니다. `href('/gold/:id', { id })` 로 URL 을 만듭니다.
 - **서버 코드는 서버에만**: `loader`·`action`·`middleware` 와 그 헬퍼·import 를 클라 번들에서 지웁니다. 클라 코드가 `*.server.ts` 를 import 하면 빌드가 실패합니다.
 - **어댑터**: Node(`(req, res, next)`, Express·Connect 호환), Fastify, Hono, Web `Request → Response`, `node:*` 없는 Cloudflare Workers 용 edge.
-- **에러**: 라우트 `ErrorBoundary`, `notFound()`, `redirect()`, `httpError()`. prod 는 내부 메시지를 숨기고, dev 는 서버 에러를 Vite 오버레이로 보여 줍니다.
+- **에러**: 라우트 `ErrorBoundary`, `notFound()`, `redirect()`, `httpError()`. 어느 라우트 경계도 잡지 못한 렌더 에러는 화면을 비우지 않고 `Document` 안의 기본 에러 화면으로 그립니다. prod 는 내부 메시지를 숨기고, dev 는 서버 에러를 Vite 오버레이로 보여 줍니다.
 - **구형 WebView**: `@vitejs/plugin-legacy` 와 함께 쓰면 SSR 페이지에 빠지기 쉬운 nomodule 스크립트를 ssr-kit 이 넣어 줍니다.
 - **그 밖에**: `head()` 병합, CSP nonce, `Server-Timing`, 정적 HTML prerender, 파일 기반 라우팅, 라우트 모듈 Fast Refresh.
 - 클라 런타임 **5.7 KB** (min+gzip). React 외 런타임 의존성 없음.
@@ -159,6 +159,12 @@ app.listen(3000);
 
 `vite build` 가 `dist/client` 와 `dist/server/entry.js` 를 만듭니다. API 라우트와 미들웨어는 그냥 Express 코드로 둡니다.
 
+핸들러에 `next` 를 넘기면 매치되는 라우트가 없는 주소는 다음 Express 핸들러로 넘어가, Express 기본 응답 `Cannot GET /path` 가 나갑니다. 앱의 404 화면을 그리려면 맨 끝에 `next` 없이 한 번 더 붙입니다.
+
+```ts
+app.use((req, res) => createSsrHandler({ build })(req, res)); // 맨 끝: next 없음 → 404 화면
+```
+
 <details>
 <summary><b>Cloudflare Workers</b></summary>
 
@@ -244,6 +250,12 @@ export default function Guestbook() {
 ```
 
 action 은 라우트 미들웨어 안에서 실행되고, 같은 응답 안에서 로더가 다시 돕니다. 다른 출처에서 온 요청은 `403` 입니다.
+
+`action` 은 그 라우트로 오는 POST·PUT·PATCH·DELETE 를 모두 받습니다. 일부 메서드만 받으려면 `request.method` 를 확인합니다.
+
+```ts
+if (request.method !== "POST") httpError(405, "Method Not Allowed");
+```
 
 ## 미들웨어
 

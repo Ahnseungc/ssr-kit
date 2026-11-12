@@ -158,7 +158,16 @@ export const DefaultDocument = ({ children }: DocumentProps) => (
 export const Root = ({ Document }: { Document: ComponentType<DocumentProps> }) => {
   const state = useRouterState();
   const error = state.payload.error;
-  let body: ReactNode = <RouteView index={0} />;
+  // 라우트 ErrorBoundary 가 하나도 잡지 못한 렌더 에러가 hydrateRoot(document) 를 통째로 지우지 않게
+  let body: ReactNode = (
+    <RenderErrorCatcher
+      fallback={DefaultErrorPage}
+      resetKey={state.location.key}
+      dev={state.dev}
+    >
+      <RouteView index={0} />
+    </RenderErrorCatcher>
+  );
   if (state.payload.shell) body = null;
   else if (error && error.routeId === null) body = <DefaultErrorPage error={error.error} />;
   return <Document>{body}</Document>;

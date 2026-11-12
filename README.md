@@ -38,7 +38,7 @@ Next.js owns your server. ssr-kit is a function you mount on it.
 - **Type-safe links**: generated route types make `<Link to="/gol/1">` a compile error. `href('/gold/:id', { id })` builds URLs.
 - **Server-only code stays on the server**: `loader`, `action`, `middleware`, their helpers, and their imports are removed from the client bundle. Importing a `*.server.ts` file from client code fails the build.
 - **Adapters**: Node (`(req, res, next)`, works with Express / Connect), Fastify, Hono, Web `Request → Response`, and an edge adapter with no `node:*` imports for Cloudflare Workers.
-- **Errors**: route `ErrorBoundary`, `notFound()`, `redirect()`, `httpError()`. Production hides internal messages. Dev shows server errors in the Vite overlay.
+- **Errors**: route `ErrorBoundary`, `notFound()`, `redirect()`, `httpError()`. A render error no route boundary catches falls back to a default error page inside your `Document` instead of blanking the page. Production hides internal messages. Dev shows server errors in the Vite overlay.
 - **Old WebViews**: works with `@vitejs/plugin-legacy`; ssr-kit adds the nomodule scripts that SSR pages otherwise miss.
 - **Extras**: `head()` merging, CSP nonce, `Server-Timing`, prerender to static HTML, file-based routes, React Fast Refresh for route modules.
 - Client runtime **5.7 KB** min+gzip. No runtime dependencies besides React.
@@ -159,6 +159,12 @@ app.listen(3000);
 
 `vite build` writes `dist/client` and `dist/server/entry.js`. Your API routes and middleware stay plain Express.
 
+When the handler gets `next`, a URL that matches no route falls through to the next Express handler, so Express answers with its own `Cannot GET /path`. To render your app's 404 page instead, mount the handler once more at the end without `next`:
+
+```ts
+app.use((req, res) => createSsrHandler({ build })(req, res)); // last: no next → 404 page
+```
+
 <details>
 <summary><b>Cloudflare Workers</b></summary>
 
@@ -244,6 +250,12 @@ export default function Guestbook() {
 ```
 
 The action runs inside the route middleware, then the loaders run again in the same response. Requests from another origin get `403`.
+
+`action` receives every POST, PUT, PATCH, and DELETE to the route. If it should accept only some methods, check `request.method`:
+
+```ts
+if (request.method !== "POST") httpError(405, "Method Not Allowed");
+```
 
 ## Middleware
 
