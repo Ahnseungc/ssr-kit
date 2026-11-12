@@ -2,7 +2,7 @@
 
 All notable changes to `ssr-kit` are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.1] - 2026-11-12
 
 ### Fixed
 
@@ -33,4 +33,5 @@ First public release.
 - **Operations**: `Server-Timing` header (dev default) and `onTiming`, CSP nonce on every inline and module script, `Cache-Control: private, no-store` by default and `no-store` on error responses, production error messages hidden.
 - Serialization of `Date`, `Map`, `Set`, `BigInt`, `RegExp`, `URL`, special numbers, and shared or circular references, escaped for inline scripts.
 
+[0.1.1]: https://github.com/Ahnseungc/ssr-kit/releases/tag/v0.1.1
 [0.1.0]: https://github.com/Ahnseungc/ssr-kit/releases/tag/v0.1.0

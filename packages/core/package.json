@@ -1,6 +1,6 @@
 {
   "name": "ssr-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "React 19 streaming SSR as one middleware for the Node server you already have. Vite 8 plugin, adapters for Express, Fastify, Hono, and Cloudflare Workers.",
   "keywords": [
     "react",
